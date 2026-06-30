@@ -1,0 +1,6 @@
+{
+  "name": "Toco Speciality",
+  "description": "Virtual Restaurant Assistant, QR Code Menu, and Order Tracker for Toco Speciality.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
