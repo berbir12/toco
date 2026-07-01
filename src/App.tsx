@@ -303,7 +303,16 @@ export default function App() {
     const savedTableNumber = localStorage.getItem("toco_tableNumber");
     const savedMessages = localStorage.getItem("toco_messages");
 
-    if (savedMenu) setMenuItems(JSON.parse(savedMenu));
+    if (savedMenu) {
+      const parsed = JSON.parse(savedMenu);
+      const hasCheapOldPrices = parsed.some((item: any) => item.price < 50);
+      if (hasCheapOldPrices) {
+        setMenuItems(MENU_ITEMS);
+        localStorage.setItem("toco_menuItems", JSON.stringify(MENU_ITEMS));
+      } else {
+        setMenuItems(parsed);
+      }
+    }
     else setMenuItems(MENU_ITEMS);
 
     if (savedTables) {
