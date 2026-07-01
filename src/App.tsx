@@ -56,6 +56,15 @@ export default function App() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
 
+  // Elegant Custom Toast Notification
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const showToastMessage = (message: string, type: "success" | "error" | "info" = "info") => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((curr) => curr?.message === message ? null : curr);
+    }, 4500);
+  };
+
   // Dynamic States
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableConfig[]>([]);
@@ -355,7 +364,7 @@ export default function App() {
         }
       } else {
         const err = await res.json();
-        alert(`Failed to update user role: ${err.error}`);
+        showToastMessage(`Failed to update user role: ${err.error}`, "error");
       }
     } catch (err) {
       console.error("Role update error:", err);
@@ -580,7 +589,7 @@ export default function App() {
   const handlePlaceOrder = async (tableNum: string) => {
     if (cart.length === 0) return;
     if (!authToken) {
-      alert("Initializing your guest lounge session. Please try again in a brief second.");
+      showToastMessage("Initializing your guest lounge session. Please try again in a brief second.", "info");
       return;
     }
 
@@ -633,7 +642,7 @@ export default function App() {
         setMessages((prev) => [...prev, msg]);
       } else {
         const err = await res.json();
-        alert(`Failed to submit order: ${err.error}`);
+        showToastMessage(`Failed to submit order: ${err.error}`, "error");
       }
     } catch (err) {
       console.error("Submit order error:", err);
@@ -701,15 +710,15 @@ export default function App() {
           // Open Chapa checkout link
           window.open(data.checkoutUrl, "_blank");
         } else {
-          alert("Unable to generate payment link. Please try again.");
+          showToastMessage("Unable to generate payment link. Please try again.", "error");
         }
       } else {
         const err = await res.json();
-        alert(`Failed to initialize Chapa payment: ${err.error || err.message}`);
+        showToastMessage(`Failed to initialize Chapa payment: ${err.error || err.message}`, "error");
       }
     } catch (err) {
       console.error("Chapa initialization error:", err);
-      alert("Network error while connecting to Chapa payment system.");
+      showToastMessage("Network error while connecting to Chapa payment system.", "error");
     }
   };
 
@@ -834,7 +843,7 @@ export default function App() {
         setMessages((prev) => [...prev, msg]);
       } else {
         const err = await res.json();
-        alert(`Failed to update order: ${err.error || "Please try again."}`);
+        showToastMessage(`Failed to update order: ${err.error || "Please try again."}`, "error");
       }
     } catch (err) {
       console.error("Error updating active order:", err);
@@ -1410,6 +1419,27 @@ export default function App() {
         </AnimatePresence>
 
       </main>
+
+      {/* Elegant Global Custom Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-50 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3.5 border text-xs tracking-wider font-semibold ${
+              toast.type === "error"
+                ? "bg-red-950 text-red-200 border-red-500/30"
+                : toast.type === "success"
+                ? "bg-stone-950 text-gold-200 border-gold-600/40"
+                : "bg-stone-900 text-stone-100 border-stone-700/40"
+            }`}
+          >
+            <div className={`w-2.5 h-2.5 rounded-full animate-ping ${toast.type === "error" ? "bg-red-400" : "bg-gold-400"}`} />
+            <span className="font-sans font-bold leading-normal">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
