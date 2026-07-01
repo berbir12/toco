@@ -16,10 +16,14 @@ export function TableQRCode({ tableNumber }: TableQRCodeProps) {
   const [qrSrc, setQrSrc] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
 
-  // The landing URL for scanning is configured to use the custom production domain
-  // so that even when administrators manage tables from the developer portal,
-  // the generated and printed physical QR codes correctly route customers to the production site.
-  const scanUrl = `https://tocospecialty.bitlabsbuild.com/?table=${tableNumber}`;
+  // Dynamically resolve URL based on current environment (dev, staging, or custom production domain)
+  const [scanUrl, setScanUrl] = useState<string>(`https://tocospecialty.bitlabsbuild.com/?table=${tableNumber}`);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setScanUrl(`${window.location.origin}/?table=${tableNumber}`);
+    }
+  }, [tableNumber]);
 
   useEffect(() => {
     let active = true;
@@ -133,7 +137,8 @@ export default function AdminPanel({
   const handleDownloadAllQRs = async () => {
     for (let i = 0; i < tables.length; i++) {
       const t = tables[i];
-      const scanUrl = `https://tocospecialty.bitlabsbuild.com/?table=${t.tableNumber}`;
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://tocospecialty.bitlabsbuild.com";
+      const scanUrl = `${origin}/?table=${t.tableNumber}`;
       try {
         const url = await QRCode.toDataURL(scanUrl, {
           width: 600,

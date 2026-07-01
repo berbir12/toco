@@ -79,9 +79,9 @@ ${menuSectionStr}
 - When asked "Where is my food?" or "Check status", give a dynamic, proactive update using the current status. Bold the status like **Preparing** or **Ready for Pickup / Serving**. E.g., "Your **Toco Signature Gold Latte** is currently being handcrafted by our lead barista! It's currently in the **Preparing** stage."
 
 #### Phase C: Payment & Checkout
-- Summarize the cart: itemized breakdown, taxes/fees (VAT is 10%, service charge is 5%). Highlight the final total.
-- Offer options: Google Pay, Credit/Debit link, or calling a server over with a card terminal.
-- If they confirm/simulate payment, trigger 'pay' action to complete the mock transaction.
+- **CRITICAL RESTAURANT POLICY**: Payment can ONLY be requested or processed AFTER the food/drinks are served (i.e. when Current Order Status is exactly **Served & Completed**).
+- If the customer wants to pay but the order status is NOT **Served & Completed**, explain to them politely but clearly that our lounge policy requires food/drinks to be fully served first. Do NOT offer payment options or trigger the 'pay' action in this state; tell them they can complete their payment as soon as our staff hand-delivers their order and updates the order status to **Served & Completed**.
+- Only if the Current Order Status is exactly **Served & Completed**, summarize the order, highlight the final total, offer payment options (Chapa, Google Pay, Credit/Debit link, or Request Waiter), and trigger the 'pay' action if they choose to pay or confirm/simulate payment.
 
 ### Formatting & Constraints
 - ALWAYS use **bolding** for menu items, prices, and order statuses.
@@ -303,11 +303,33 @@ app.patch("/api/orders/:id/payment", requireAuth, async (req: AuthRequest, res) 
       return res.status(400).json({ error: "Payment method is required." });
     }
 
+    const order = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    if (order.status !== "Served & Completed") {
+      return res.status(400).json({ error: "Payment can only be requested after the order has been hand-delivered and marked as served by our staff." });
+    }
+
+    let isConfirmed = true;
+    let finalMethod = paymentMethod;
+
+    if (paymentMethod === "Call Server") {
+      isConfirmed = false;
+    } else if (paymentMethod === "Unpaid") {
+      isConfirmed = false;
+      finalMethod = null;
+    }
+
     const updated = await db
       .update(orders)
       .set({
-        paymentConfirmed: true,
-        paymentMethod,
+        paymentConfirmed: isConfirmed,
+        paymentMethod: finalMethod,
       })
       .where(eq(orders.id, id))
       .returning();
@@ -341,6 +363,10 @@ app.post("/api/orders/:id/chapa-initialize", requireAuth, async (req: AuthReques
 
     if (!order) {
       return res.status(404).json({ error: "Order not found." });
+    }
+
+    if (order.status !== "Served & Completed") {
+      return res.status(400).json({ error: "Payment can only be requested after the order has been hand-delivered and marked as served by our staff." });
     }
 
     const chapaSecretKey = process.env.CHAPA_SECRET_KEY;

@@ -223,6 +223,12 @@ export default function StaffDashboard({
                       {order.paymentConfirmed ? "💰 BILL PAID" : "⚠️ UNPAID - CLICK TO PAY"}
                     </button>
 
+                    {order.paymentMethod === "Call Server" && !order.paymentConfirmed && (
+                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-amber-500 text-white font-black animate-pulse border border-amber-600 flex items-center gap-1">
+                        🛎️ WAITER REQUESTED
+                      </span>
+                    )}
+
                     {/* Stage status indicator */}
                     <span className={`text-[10px] font-mono border px-3 py-1 rounded-full flex items-center gap-1.5 font-bold ${getStatusBadgeClass(order.status)}`}>
                       {getStatusIcon(order.status)}

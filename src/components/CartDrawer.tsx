@@ -5,7 +5,7 @@
 
 import React, { useState } from "react";
 import { CartItem, Order } from "../types";
-import { Trash2, Smartphone, CreditCard, Bell, Sparkles, CheckCircle2, Receipt, ShieldCheck, Heart } from "lucide-react";
+import { Trash2, Smartphone, CreditCard, Bell, Sparkles, CheckCircle2, Receipt, ShieldCheck, Heart, Coffee, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface CartDrawerProps {
@@ -357,78 +357,79 @@ export default function CartDrawer({
 
         {activeOrder && !activeOrder.paymentConfirmed && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-mono tracking-widest text-stone-400 uppercase font-black">
-                SELECT TERMINAL
-              </span>
-              <span className="flex items-center gap-1 text-[9px] text-emerald-600 font-semibold font-mono">
-                <ShieldCheck className="w-3 h-3" /> SECURE NFC
-              </span>
-            </div>
+            {activeOrder.status === "Served & Completed" ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono tracking-widest text-stone-400 uppercase font-black">
+                    SELECT TERMINAL
+                  </span>
+                  <span className="flex items-center gap-1 text-[9px] text-emerald-600 font-semibold font-mono">
+                    <ShieldCheck className="w-3 h-3" /> SECURE NFC
+                  </span>
+                </div>
 
-            {isProcessing || isChapaLoading ? (
-              <div className="bg-white py-6 rounded-2xl border border-stone-200 flex flex-col items-center justify-center gap-2">
-                <div className="w-6 h-6 border-2 border-gold-600 border-t-transparent rounded-full animate-spin" />
-                <span className="text-[11px] font-sans font-medium text-stone-500 animate-pulse uppercase tracking-wider">
-                  {isChapaLoading ? "Opening Chapa Secure Gateway..." : "Contacting Bank..."}
-                </span>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-1.5">
-                <button
-                  onClick={async () => {
-                    setIsChapaLoading(true);
-                    try {
-                      await onPayWithChapa();
-                    } catch (err) {
-                      console.error(err);
-                    } finally {
-                      setIsChapaLoading(false);
-                    }
-                  }}
-                  className="flex items-center justify-between bg-gradient-to-r from-[#5a3f9c] to-[#452c80] hover:from-[#4d3289] hover:to-[#381f6d] text-white p-3.5 rounded-xl transition-all text-xs font-sans font-black uppercase tracking-wider cursor-pointer border border-[#452c80] shadow-md hover:scale-101"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="flex gap-0.5 items-center bg-white/10 px-1.5 py-0.5 rounded text-[8px] font-bold text-yellow-300 border border-white/5">
-                      🇪🇹 ETB
+                {isProcessing || isChapaLoading ? (
+                  <div className="bg-white py-6 rounded-2xl border border-stone-200 flex flex-col items-center justify-center gap-2">
+                    <div className="w-6 h-6 border-2 border-gold-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-[11px] font-sans font-medium text-stone-500 animate-pulse uppercase tracking-wider">
+                      {isChapaLoading ? "Opening Chapa Secure Gateway..." : "Contacting Bank..."}
                     </span>
-                    Pay with Chapa (Mobile)
-                  </span>
-                  <span className="font-mono text-[9px] text-gold-300 tracking-wider font-extrabold bg-black/20 px-2 py-0.5 rounded-full">RECOMMENDED</span>
-                </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <button
+                      onClick={async () => {
+                        setIsChapaLoading(true);
+                        try {
+                          await onPayWithChapa();
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setIsChapaLoading(false);
+                        }
+                      }}
+                      className="flex items-center justify-between bg-gradient-to-r from-[#5a3f9c] to-[#452c80] hover:from-[#4d3289] hover:to-[#381f6d] text-white p-3.5 rounded-xl transition-all text-xs font-sans font-black uppercase tracking-wider cursor-pointer border border-[#452c80] shadow-md hover:scale-101"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="flex gap-0.5 items-center bg-white/10 px-1.5 py-0.5 rounded text-[8px] font-bold text-yellow-300 border border-white/5">
+                          🇪🇹 ETB
+                        </span>
+                        Pay with Chapa (Mobile)
+                      </span>
+                      <span className="font-mono text-[9px] text-gold-300 tracking-wider font-extrabold bg-black/20 px-2 py-0.5 rounded-full">RECOMMENDED</span>
+                    </button>
 
-                <button
-                  onClick={() => handlePay("Google Pay")}
-                  className="flex items-center justify-between bg-stone-950 text-white hover:bg-stone-900 p-3 rounded-xl transition-colors text-xs font-sans font-bold uppercase tracking-wider cursor-pointer border border-stone-900"
-                >
-                  <span className="flex items-center gap-2">
-                    <Smartphone className="w-4 h-4 text-gold-300" />
-                    Google Pay
-                  </span>
-                  <span className="font-mono text-[9px] text-gold-400 tracking-wider">INSTANT</span>
-                </button>
-
-                <button
-                  onClick={() => handlePay("Credit Link")}
-                  className="flex items-center justify-between bg-white text-stone-800 hover:bg-stone-50 p-3 rounded-xl transition-colors text-xs font-sans font-bold uppercase tracking-wider cursor-pointer border border-stone-200 shadow-xs"
-                >
-                  <span className="flex items-center gap-2 text-stone-900">
-                    <CreditCard className="w-4 h-4 text-stone-500" />
-                    Credit Card
-                  </span>
-                  <span className="font-mono text-[9px] text-stone-400 tracking-wider">TAP</span>
-                </button>
-
-                <button
-                  onClick={() => handlePay("Call Server")}
-                  className="flex items-center justify-between bg-gold-50 text-gold-950 hover:bg-gold-100 p-3 rounded-xl transition-colors text-xs font-sans font-bold uppercase tracking-wider cursor-pointer border border-gold-200/50"
-                >
-                  <span className="flex items-center gap-2 text-gold-900">
-                    <Bell className="w-4 h-4 text-gold-600" />
-                    Request Waiter / Terminal
-                  </span>
-                  <span className="font-mono text-[9px] text-gold-600">CALL</span>
-                </button>
+                    <button
+                      onClick={() => handlePay("Call Server")}
+                      className="flex items-center justify-between bg-gold-50 text-gold-950 hover:bg-gold-100 p-3 rounded-xl transition-colors text-xs font-sans font-bold uppercase tracking-wider cursor-pointer border border-gold-200/50"
+                    >
+                      <span className="flex items-center gap-2 text-gold-900">
+                        <Bell className="w-4 h-4 text-gold-600" />
+                        Request Waiter / Terminal
+                      </span>
+                      <span className="font-mono text-[9px] text-gold-600">CALL</span>
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="bg-amber-50/50 text-amber-950 p-5 rounded-2xl border border-amber-200/40 flex flex-col items-center text-center gap-3 relative overflow-hidden shadow-xs">
+                <div className="absolute inset-0 bg-gradient-to-b from-[#FDFBF7]/30 to-transparent pointer-events-none" />
+                <div className="w-9 h-9 bg-amber-500/10 text-gold-700 rounded-full flex items-center justify-center animate-pulse border border-gold-500/10">
+                  <Coffee className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <h4 className="font-serif font-black text-xs uppercase tracking-wide text-stone-900">
+                    Awaiting Table Service
+                  </h4>
+                  <p className="text-[10px] text-stone-500 mt-1.5 font-light leading-relaxed max-w-[240px] mx-auto">
+                    Our baristas are crafting your selection. Under restaurant guidelines, payment is only requested once your order is fully served at your table.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[8px] font-mono bg-stone-100 text-stone-500 px-3 py-1 rounded-full uppercase tracking-widest font-black border border-stone-200/40">
+                  <Clock className="w-3.5 h-3.5 text-gold-600 animate-spin" style={{ animationDuration: '6s' }} />
+                  Status: {activeOrder.status}
+                </div>
               </div>
             )}
           </div>

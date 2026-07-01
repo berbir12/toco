@@ -61,8 +61,49 @@ export default function App() {
   const [tables, setTables] = useState<TableConfig[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [tableNumber, setTableNumber] = useState<string>("07");
+  const [tableNumber, setTableNumber] = useState<string>(() => {
+    // Check URL params first
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      let tableParam = searchParams.get("table");
+      if (!tableParam && window.location.hash.includes("?")) {
+        const hashParams = new URLSearchParams(window.location.hash.split("?")[1]);
+        tableParam = hashParams.get("table");
+      }
+      if (tableParam) {
+        return tableParam;
+      }
+    } catch (e) {
+      console.error("Error parsing URL parameters in state initializer", e);
+    }
+
+    // Then check localStorage
+    const savedTableNumber = localStorage.getItem("toco_tableNumber");
+    if (savedTableNumber) {
+      return savedTableNumber;
+    }
+
+    return "07";
+  });
+
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      let tableParam = searchParams.get("table");
+      if (!tableParam && window.location.hash.includes("?")) {
+        const hashParams = new URLSearchParams(window.location.hash.split("?")[1]);
+        tableParam = hashParams.get("table");
+      }
+      const savedTableNumber = localStorage.getItem("toco_tableNumber");
+      if (tableParam && savedTableNumber && tableParam !== savedTableNumber) {
+        // Table changed! Discard old active order ID from previous table
+        return null;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return localStorage.getItem("toco_activeOrderId");
+  });
 
   // Initial greeting chat message from the Toco Concierge
   const [messages, setMessages] = useState<Message[]>([
@@ -175,14 +216,45 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchOrdersFromDB();
+    let isCurrent = true;
+
+    const fetchOrders = async () => {
+      if (!authToken) return;
+      const activeTable = tableNumber;
+      try {
+        const res = await fetch(`/api/orders?table=${activeTable}`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+        if (res.ok && isCurrent) {
+          const dbOrders = await res.json();
+          setOrders(dbOrders);
+
+          // Sync active unpaid order for this specific table
+          const activeUnpaid = dbOrders.find((o: any) => o.tableNumber === activeTable && !o.paymentConfirmed);
+          if (activeUnpaid) {
+            setActiveOrderId(activeUnpaid.id);
+          } else {
+            setActiveOrderId(null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load database orders:", err);
+      }
+    };
+
+    fetchOrders();
     
     // Poll every 5s if logged in and has access to kitchen / admin panel
     let interval: any;
     if (authToken && (userProfile?.role === "staff" || userProfile?.role === "admin")) {
-      interval = setInterval(() => fetchOrdersFromDB(), 5000);
+      interval = setInterval(() => {
+        if (isCurrent) fetchOrders();
+      }, 5000);
     }
     return () => {
+      isCurrent = false;
       if (interval) clearInterval(interval);
     };
   }, [authToken, userProfile?.role, tableNumber]);
@@ -332,10 +404,7 @@ export default function App() {
     if (savedCart) setCart(JSON.parse(savedCart));
     else setCart([]);
 
-    if (savedActiveOrderId) setActiveOrderId(savedActiveOrderId);
-    else setActiveOrderId(null);
-
-    // Parse table from URL if present (e.g. ?table=03 or #/?table=03)
+    // Synchronize initial values to localStorage if url params differ
     let tableParam = null;
     try {
       const searchParams = new URLSearchParams(window.location.search);
@@ -349,12 +418,11 @@ export default function App() {
     }
 
     if (tableParam) {
-      setTableNumber(tableParam);
       localStorage.setItem("toco_tableNumber", tableParam);
-    } else if (savedTableNumber) {
-      setTableNumber(savedTableNumber);
-    } else {
-      setTableNumber("07");
+      if (savedTableNumber && tableParam !== savedTableNumber) {
+        // Table changed! Clear previous table's saved active order ID from storage
+        localStorage.removeItem("toco_activeOrderId");
+      }
     }
 
     if (savedMessages) setMessages(JSON.parse(savedMessages));
@@ -592,14 +660,23 @@ export default function App() {
           prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
         );
 
-        // Append receipt notification
-        const msg: Message = {
-          id: `order-paid-${Date.now()}`,
-          sender: "assistant",
-          text: `💳 **Payment Confirmed!**\n\nThank you for settling your bill via **${method}**. We hope you enjoyed your signature coffees and cuisine at **Toco Speciality**. Have a fantastic day!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        };
-        setMessages((prev) => [...prev, msg]);
+        if (updatedOrder.paymentConfirmed) {
+          const msg: Message = {
+            id: `order-paid-${Date.now()}`,
+            sender: "assistant",
+            text: `💳 **Payment Confirmed!**\n\nThank you for settling your bill via **${method}**. We hope you enjoyed your signature coffees and cuisine at **Toco Speciality**. Have a fantastic day!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          };
+          setMessages((prev) => [...prev, msg]);
+        } else {
+          const msg: Message = {
+            id: `order-call-server-${Date.now()}`,
+            sender: "assistant",
+            text: `🛎️ **Staff Notified!**\n\nWe have notified our floor staff that you would like to settle your bill. A waiter will bring a physical credit/debit card terminal or process cash right at **Table ${activeOrder.tableNumber}**. Please wait a moment.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          };
+          setMessages((prev) => [...prev, msg]);
+        }
       }
     } catch (err) {
       console.error("Payment error:", err);
@@ -890,7 +967,7 @@ export default function App() {
       case "pay": {
         const activeOrder = getActiveOrder();
         if (activeOrder && !activeOrder.paymentConfirmed) {
-          handleConfirmPayment("Digital AI Wallet");
+          handleConfirmPayment("Call Server");
         }
         break;
       }

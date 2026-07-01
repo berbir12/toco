@@ -18,9 +18,9 @@ export interface AuthRequest extends Request {
   };
 }
 
-export async function getOrCreateUser(uid: string, email: string) {
+export async function getOrCreateUser(uid: string, email: string, role?: string) {
   // Determine role: user from metadata berbir901@gmail.com becomes 'admin' automatically
-  const defaultRole = email.toLowerCase() === "berbir901@gmail.com" ? "admin" : "customer";
+  const defaultRole = role || (email.toLowerCase() === "berbir901@gmail.com" ? "admin" : "customer");
 
   try {
     // Check if user already exists
@@ -28,12 +28,13 @@ export async function getOrCreateUser(uid: string, email: string) {
     if (existing.length > 0) {
       // If email or role should be adjusted, we can do it, otherwise return
       const userRecord = existing[0];
-      if (userRecord.email !== email || (email.toLowerCase() === "berbir901@gmail.com" && userRecord.role !== "admin")) {
+      const targetRole = role || (email.toLowerCase() === "berbir901@gmail.com" ? "admin" : userRecord.role);
+      if (userRecord.email !== email || userRecord.role !== targetRole) {
         const updated = await db
           .update(users)
           .set({
             email,
-            role: email.toLowerCase() === "berbir901@gmail.com" ? "admin" : userRecord.role,
+            role: targetRole,
           })
           .where(eq(users.uid, uid))
           .returning();
@@ -68,34 +69,52 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
 
   // 1. Handle Passcode Auth for Staff / Admin
   if (token === "passcode_888888") {
-    req.user = {
-      uid: "admin_passcode",
-      email: "admin@tocospeciality.com",
-      role: "admin",
-      dbId: 888888,
-    };
-    return next();
+    try {
+      const dbUser = await getOrCreateUser("admin_passcode", "admin@tocospeciality.com", "admin");
+      req.user = {
+        uid: "admin_passcode",
+        email: "admin@tocospeciality.com",
+        role: "admin",
+        dbId: dbUser.id,
+      };
+      return next();
+    } catch (e) {
+      console.error("Error securing passcode session:", e);
+      return res.status(500).json({ error: "Failed to initialize staff session" });
+    }
   }
 
   if (token === "passcode_222222") {
-    req.user = {
-      uid: "staff_passcode",
-      email: "staff@tocospeciality.com",
-      role: "staff",
-      dbId: 222222,
-    };
-    return next();
+    try {
+      const dbUser = await getOrCreateUser("staff_passcode", "staff@tocospeciality.com", "staff");
+      req.user = {
+        uid: "staff_passcode",
+        email: "staff@tocospeciality.com",
+        role: "staff",
+        dbId: dbUser.id,
+      };
+      return next();
+    } catch (e) {
+      console.error("Error securing passcode session:", e);
+      return res.status(500).json({ error: "Failed to initialize staff session" });
+    }
   }
 
   // 2. Handle Guest Sessions for scanning customers
   if (token.startsWith("guest_")) {
-    req.user = {
-      uid: token,
-      email: "guest@tocospeciality.com",
-      role: "customer",
-      dbId: 999999,
-    };
-    return next();
+    try {
+      const dbUser = await getOrCreateUser(token, "guest@tocospeciality.com", "customer");
+      req.user = {
+        uid: token,
+        email: "guest@tocospeciality.com",
+        role: "customer",
+        dbId: dbUser.id,
+      };
+      return next();
+    } catch (e) {
+      console.error("Error securing guest session:", e);
+      return res.status(500).json({ error: "Failed to initialize guest session" });
+    }
   }
 
   try {
