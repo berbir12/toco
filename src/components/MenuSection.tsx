@@ -77,13 +77,13 @@ export default function MenuSection({ menuItems, onAddToCart }: MenuSectionProps
       </AnimatePresence>
 
       {/* Category Tabs */}
-      <div className="flex flex-wrap gap-2.5 mb-8" id="menu-categories">
+      <div className="flex gap-2.5 mb-8 overflow-x-auto pb-2 scrollbar-none snap-x whitespace-nowrap" id="menu-categories">
         {categories.map((category) => (
           <button
             key={category}
             id={`category-${category.toLowerCase().replace(/\s+/g, '-')}`}
             onClick={() => setActiveCategory(category)}
-            className={`flex items-center gap-2.5 px-6 py-3.5 rounded-full font-sans text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 cursor-pointer border ${
+            className={`flex items-center gap-2 px-4 py-2.5 md:px-6 md:py-3.5 rounded-full font-sans text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 cursor-pointer border shrink-0 snap-center ${
               activeCategory === category
                 ? "bg-stone-950 text-gold-200 border-stone-950 shadow-md scale-102"
                 : "bg-white text-stone-500 border-stone-200 hover:text-stone-950 hover:bg-[#FDFBF7]"
@@ -96,10 +96,10 @@ export default function MenuSection({ menuItems, onAddToCart }: MenuSectionProps
       </div>
 
       {/* Gourmet Paper Menu Container */}
-      <div className="bg-white rounded-[2.5rem] p-8 md:p-12 border border-[#E9E4DB] shadow-[0_12px_50px_rgba(233,228,219,0.25)] relative overflow-hidden">
+      <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-5 sm:p-8 md:p-12 border border-[#E9E4DB] shadow-[0_12px_50px_rgba(233,228,219,0.25)] relative overflow-hidden">
         
         {/* Fine border outline */}
-        <div className="absolute inset-4 rounded-[1.8rem] border border-gold-700/5 pointer-events-none" />
+        <div className="absolute inset-2.5 md:inset-4 rounded-[1.5rem] md:rounded-[1.8rem] border border-gold-700/5 pointer-events-none" />
 
         {/* Vintage Header */}
         <div className="text-center mb-12 relative">

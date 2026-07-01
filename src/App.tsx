@@ -15,7 +15,7 @@ import AdminPanel from "./components/AdminPanel";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Coffee, MapPin, Award, Eye, Settings, Users, ChefHat, 
-  Lock, ArrowLeft, Unlock, AlertCircle, Sparkles, LogOut, CheckCircle
+  Lock, ArrowLeft, Unlock, AlertCircle, Sparkles, LogOut, CheckCircle, ShoppingBag
 } from "lucide-react";
 
 // Firebase Auth Client
@@ -33,6 +33,9 @@ const INITIAL_TABLES: TableConfig[] = [
 export default function App() {
   // Hash Routing State
   const [currentView, setCurrentView] = useState<"customer" | "staff" | "admin">("customer");
+
+  // Mobile active tab for customer view (menu vs AI assistant & cart)
+  const [mobileTab, setMobileTab] = useState<"menu" | "assistant">("menu");
 
   // Firebase Auth & Database User State
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
@@ -875,10 +878,10 @@ export default function App() {
                 >
                   
                   {/* Brand & Ambiance Showcase Bento Board */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     
                     {/* Tile 1: Elegant Branding Wall Image (images.jpg) */}
-                    <div className="lg:col-span-2 relative h-80 rounded-[2.5rem] overflow-hidden shadow-2xl border border-stone-200/50 flex items-center justify-end bg-stone-200">
+                    <div className="md:col-span-2 relative h-48 sm:h-64 md:h-80 rounded-[2rem] md:rounded-[2.5rem] overflow-hidden shadow-xl border border-stone-200/50 flex items-center justify-end bg-stone-200">
                       <img
                         src="images.jpg"
                         alt="Toco Speciality Marble Wall branding logo"
@@ -888,38 +891,38 @@ export default function App() {
                           (e.target as HTMLImageElement).style.display = "none";
                         }}
                       />
-                      <div className="absolute inset-0 bg-gradient-to-r from-stone-950/90 via-stone-950/55 to-stone-900/20 flex flex-col justify-end p-8 md:p-10 text-white">
-                        <span className="text-[10px] font-mono tracking-[0.3em] text-gold-400 uppercase font-black mb-3.5 flex items-center gap-2">
-                          <Award className="w-4 h-4 text-gold-400" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-stone-950/90 via-stone-950/55 to-stone-900/20 flex flex-col justify-end p-5 md:p-10 text-white">
+                        <span className="text-[9px] md:text-[10px] font-mono tracking-[0.3em] text-gold-400 uppercase font-black mb-2 md:mb-3.5 flex items-center gap-2">
+                          <Award className="w-3.5 h-3.5 md:w-4 md:h-4 text-gold-400" />
                           Michelin Award Coffee Roastery
                         </span>
-                        <h1 className="text-4xl md:text-5xl font-serif font-semibold text-stone-100 tracking-wide mb-3">
+                        <h1 className="text-2xl md:text-5xl font-serif font-semibold text-stone-100 tracking-wide mb-1 md:mb-3">
                           Toco Speciality
                         </h1>
-                        <p className="text-xs md:text-sm text-stone-300 font-light max-w-lg leading-relaxed">
+                        <p className="text-[10px] md:text-sm text-stone-300 font-light max-w-lg leading-relaxed line-clamp-2 md:line-clamp-none">
                           Our sensory space features custom polished grey marble walls, custom warm cherry-wood cabinetry, and the quiet, soothing hum of freshly roasted beans. Discover signature blends curated by world-class baristas.
                         </p>
                       </div>
                     </div>
 
                     {/* Tile 2: Table Status Overview */}
-                    <div className="bg-gradient-to-br from-[#1E1B18] to-[#12100E] text-[#F3EFEB] rounded-[2.5rem] p-8 shadow-2xl border border-stone-900 flex flex-col justify-between">
+                    <div className="bg-gradient-to-br from-[#1E1B18] to-[#12100E] text-[#F3EFEB] rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 shadow-xl border border-stone-900 flex flex-col justify-between">
                       <div>
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between mb-3 md:mb-4">
                           <span className="text-[9px] font-mono tracking-[0.2em] text-gold-400 uppercase font-bold">
                             Table Link Active
                           </span>
                           <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_#10B981]" />
                         </div>
-                        <h2 className="text-4xl font-serif font-semibold text-gold-100">
+                        <h2 className="text-2xl md:text-4xl font-serif font-semibold text-gold-100">
                           Table {tableNumber}
                         </h2>
-                        <div className="text-stone-400 text-xs mt-4 leading-relaxed font-light">
+                        <p className="text-stone-400 text-[11px] md:text-xs mt-3 leading-relaxed font-light">
                           Your physical dining counter is connected. Select delicacies below or dictate your specific preferences to our integrated AI concierge.
-                        </div>
+                        </p>
                       </div>
 
-                      <div className="mt-8 pt-5 border-t border-stone-800/80 flex items-center justify-between text-[11px] font-mono text-stone-500">
+                      <div className="mt-6 md:mt-8 pt-4 md:pt-5 border-t border-stone-800/80 flex items-center justify-between text-[10px] md:text-[11px] font-mono text-stone-500">
                         <span className="flex items-center gap-2 text-stone-400">
                           <MapPin className="w-3.5 h-3.5 text-gold-500" />
                           Marble Counter Sec A
@@ -929,11 +932,40 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Elegant Tactile Mobile Tab Swapper */}
+                  <div className="flex lg:hidden bg-stone-100/80 p-1 rounded-2xl border border-stone-200 gap-1 shadow-2xs">
+                    <button
+                      onClick={() => setMobileTab("menu")}
+                      className={`flex-1 py-3 text-[10px] font-display font-black uppercase tracking-[0.15em] rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                        mobileTab === "menu"
+                          ? "bg-stone-950 text-gold-200 shadow-md scale-102"
+                          : "text-stone-500 hover:text-stone-900"
+                      }`}
+                    >
+                      📖 The Gourmet Menu
+                    </button>
+                    <button
+                      onClick={() => setMobileTab("assistant")}
+                      className={`flex-1 py-3 text-[10px] font-display font-black uppercase tracking-[0.15em] rounded-xl transition-all cursor-pointer relative flex items-center justify-center gap-2 ${
+                        mobileTab === "assistant"
+                          ? "bg-stone-950 text-gold-200 shadow-md scale-102"
+                          : "text-stone-500 hover:text-stone-900"
+                      }`}
+                    >
+                      💬 Concierge & Tab
+                      {cart.length > 0 && (
+                        <span className="bg-gold-600 text-stone-950 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-4 text-center animate-pulse">
+                          {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
                   {/* Core Customer Area */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     
                     {/* Left panel: Interactive Gourmet Menu (7 cols on Desktop) */}
-                    <div className="lg:col-span-7 space-y-8">
+                    <div className={`lg:col-span-7 space-y-8 ${mobileTab === "menu" ? "block" : "hidden lg:block"}`}>
                       <div className="mb-2">
                         <span className="text-[10px] font-mono text-gold-600 font-bold uppercase tracking-[0.25em]">
                           Our Masterpieces
@@ -947,7 +979,7 @@ export default function App() {
                     </div>
 
                     {/* Right panel: Cart, Live Order Tracking, AI Chat (5 cols on Desktop) */}
-                    <div className="lg:col-span-5 space-y-6">
+                    <div className={`lg:col-span-5 space-y-6 ${mobileTab === "assistant" ? "block" : "hidden lg:block"}`}>
                       
                       {/* Section A: Live Order Tracker (Displayed if order is active) */}
                       {activeOrder && (
@@ -981,6 +1013,26 @@ export default function App() {
                       />
                     </div>
                   </div>
+
+                  {/* Floating Mobile Cart Action Bar */}
+                  {currentView === "customer" && mobileTab === "menu" && cart.length > 0 && (
+                    <div className="fixed bottom-6 right-6 z-40 lg:hidden">
+                      <button
+                        onClick={() => setMobileTab("assistant")}
+                        className="flex items-center gap-2.5 bg-stone-950 hover:bg-gold-600 text-gold-200 hover:text-stone-950 px-5 py-4 rounded-full shadow-2xl border border-stone-800 cursor-pointer animate-pulse"
+                      >
+                        <span className="relative">
+                          <ShoppingBag className="w-5 h-5" />
+                          <span className="absolute -top-1.5 -right-1.5 bg-gold-500 text-stone-950 text-[9px] font-mono font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                            {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                          </span>
+                        </span>
+                        <span className="font-sans font-bold text-xs uppercase tracking-wider">
+                          Review Tab (${cart.reduce((acc, item) => acc + item.price * item.quantity, 0).toFixed(2)})
+                        </span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Customer Lounge footer */}
                   <footer className="border-t border-stone-200/60 pt-10 mt-20 text-center sm:text-left pb-6">
