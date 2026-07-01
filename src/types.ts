@@ -28,7 +28,7 @@ export interface CartItem {
   };
 }
 
-export type OrderStatus = "Received" | "Preparing" | "Ready for Pickup / Serving";
+export type OrderStatus = "Received" | "Preparing" | "Ready for Pickup / Serving" | "Served & Completed";
 
 export interface Order {
   id: string;
@@ -50,4 +50,11 @@ export interface Message {
   sender: "user" | "assistant";
   text: string;
   timestamp: string;
+}
+
+export interface TableConfig {
+  id: string;
+  tableNumber: string;
+  seatsCount: number;
+  status: "Available" | "Occupied" | "Reserved";
 }

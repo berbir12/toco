@@ -5,20 +5,18 @@
 
 import React from "react";
 import { OrderStatus, CartItem } from "../types";
-import { Coffee, Flame, ClipboardCheck, Play, ArrowRight, Sparkles } from "lucide-react";
+import { Coffee, Flame, ClipboardCheck, CheckSquare, Sparkles } from "lucide-react";
 
 interface OrderTrackerProps {
   status: OrderStatus;
   items: CartItem[];
   tableNumber: string;
-  onAdvanceStatus: () => void;
 }
 
 export default function OrderTracker({
   status,
   items,
   tableNumber,
-  onAdvanceStatus,
 }: OrderTrackerProps) {
   const statuses: { label: OrderStatus; desc: string; icon: any }[] = [
     {
@@ -36,12 +34,18 @@ export default function OrderTracker({
       desc: "Fresh, hot delicacies are on their way to your table!",
       icon: Coffee,
     },
+    {
+      label: "Served & Completed",
+      desc: "Order is successfully delivered. Thank you!",
+      icon: CheckSquare,
+    },
   ];
 
   const getStatusIndex = (currStatus: OrderStatus) => {
     if (currStatus === "Received") return 0;
     if (currStatus === "Preparing") return 1;
-    return 2;
+    if (currStatus === "Ready for Pickup / Serving") return 2;
+    return 3;
   };
 
   const currentIndex = getStatusIndex(status);
@@ -60,7 +64,7 @@ export default function OrderTracker({
     if (index < currentIndex) {
       return "bg-gold-500";
     }
-    return "bg-stone-100";
+    return "bg-stone-150";
   };
 
   return (
@@ -68,22 +72,22 @@ export default function OrderTracker({
       <div className="flex items-center justify-between mb-6 border-b border-stone-800 pb-4">
         <div>
           <span className="text-[10px] font-mono tracking-widest text-gold-400 uppercase font-bold">
-            Live Order Status
+            Live Lounge Tracker
           </span>
-          <h3 className="text-lg font-display font-bold text-stone-100 mt-0.5">
+          <h3 className="text-base font-display font-bold text-stone-100 mt-0.5 uppercase tracking-wide">
             Table {tableNumber || "07"}
           </h3>
         </div>
         <div className="text-right">
-          <span className="text-[10px] font-mono text-stone-400 block">Current Stage</span>
-          <span className="text-xs font-mono font-bold text-gold-300 bg-gold-950/50 px-3 py-1 rounded-full border border-gold-900/40 uppercase">
+          <span className="text-[9px] font-mono text-stone-400 block uppercase">Current State</span>
+          <span className="text-[10px] font-mono font-bold text-gold-300 bg-gold-950/40 px-3 py-1 rounded-full border border-gold-900/30 uppercase tracking-wide">
             {status}
           </span>
         </div>
       </div>
 
       {/* Visual Timeline Bar */}
-      <div className="relative flex flex-col gap-6 pl-8 mb-6 mt-4">
+      <div className="relative flex flex-col gap-5 pl-8 mb-5 mt-4">
         {statuses.map((s, idx) => {
           const Icon = s.icon;
           const isDone = idx < currentIndex;
@@ -94,7 +98,7 @@ export default function OrderTracker({
               {/* Connecting line */}
               {idx < statuses.length - 1 && (
                 <div
-                  className={`absolute left-[-21px] top-6 w-0.5 h-12 ${getStatusLineColor(
+                  className={`absolute left-[-21px] top-6 w-0.5 h-11 ${getStatusLineColor(
                     idx
                   )}`}
                 />
@@ -116,7 +120,7 @@ export default function OrderTracker({
               {/* Text info */}
               <div className="flex-1">
                 <h4
-                  className={`font-display text-sm font-bold flex items-center gap-2 transition-colors duration-300 ${
+                  className={`font-display text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors duration-300 ${
                     isActive ? "text-gold-200" : isDone ? "text-stone-300" : "text-stone-500"
                   }`}
                 >
@@ -136,41 +140,32 @@ export default function OrderTracker({
         })}
       </div>
 
-      {/* Dynamic Ambiance/Cook Note */}
-      <div className="bg-stone-850/50 p-4 rounded-2xl border border-stone-800/40 text-xs text-stone-300 leading-relaxed font-light flex items-start gap-2.5">
-        <Sparkles className="w-4 h-4 text-gold-400 shrink-0 mt-0.5" />
+      {/* Dynamic Roastery State Note */}
+      <div className="bg-stone-850/50 p-4 rounded-2xl border border-stone-800/40 text-[11px] text-stone-300 leading-relaxed font-light flex items-start gap-2.5">
+        <Sparkles className="w-4 h-4 text-gold-400 shrink-0 mt-0.5 animate-pulse" />
         <div>
           {status === "Received" && (
             <span>
-              Your order has been logged into Toco's cloud terminal! The barista at our marble counter is currently reviewing your coffee selection.
+              Your selection is locked in. The barista is currently preparing the high-pressure espresso extraction against our sleek grey marble logo wall.
             </span>
           )}
           {status === "Preparing" && (
             <span>
-              <strong>Brewing & Baking:</strong> Steam is rising from our coffee machine against the sleek grey marble logo wall. Our baristas are frothing milk and applying 24k gold flakes!
+              <strong>Crafting Live:</strong> Milk is being textured and organic ingredients are being mixed. The kitchen is placing microgreens on fresh sourdough toast.
             </span>
           )}
           {status === "Ready for Pickup / Serving" && (
             <span>
-              <strong>Freshly Plated:</strong> Your selection is leaving our kitchen deck now. A Toco host is walking toward <strong>Table {tableNumber || "07"}</strong> with your fresh orders!
+              <strong>On Its Way:</strong> Your gourmet dish and gold coffees have left the serving counter and are being brought to your table by our hospitality host!
+            </span>
+          )}
+          {status === "Served & Completed" && (
+            <span>
+              <strong>Enjoy Your Feast:</strong> Served beautifully at <strong>Table {tableNumber || "07"}</strong>. Let our virtual host know if you need anything else!
             </span>
           )}
         </div>
       </div>
-
-      {/* Administrative kitchen simulator button to advance status */}
-      {status !== "Ready for Pickup / Serving" && (
-        <div className="mt-6 pt-4 border-t border-stone-800 flex justify-end">
-          <button
-            onClick={onAdvanceStatus}
-            className="flex items-center gap-1.5 bg-stone-800 hover:bg-gold-600 text-stone-200 hover:text-stone-900 px-4 py-2 rounded-xl text-[11px] font-mono font-bold transition-all duration-300 shadow-md border border-stone-700/50"
-          >
-            <Play className="w-3 h-3" />
-            Kitchen Speed-Up Sim
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

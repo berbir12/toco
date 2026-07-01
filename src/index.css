@@ -1,44 +1,89 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Outfit", sans-serif;
-  --font-serif: "Playfair Display", serif;
+  --font-serif: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
   
-  --color-gold-50: #fefcf3;
-  --color-gold-100: #fbf5db;
-  --color-gold-200: #f5e8b4;
-  --color-gold-300: #eed581;
-  --color-gold-400: #e5bd51;
-  --color-gold-500: #cca02a;
-  --color-gold-600: #ad821f;
-  --color-gold-700: #88621b;
-  --color-gold-800: #6d4e1a;
-  --color-gold-900: #5b411a;
+  --color-gold-50: #FCF9F2;
+  --color-gold-100: #F6EDB9;
+  --color-gold-200: #EEDD8B;
+  --color-gold-300: #E1C765;
+  --color-gold-400: #D3B044;
+  --color-gold-500: #BF9B30;
+  --color-gold-600: #A28023;
+  --color-gold-700: #A88B60; /* Brushed Champagne Gold */
+  --color-gold-800: #624B14;
+  --color-gold-900: #44330D;
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: #fcfbfa;
-  color: #1c1917;
-  overflow-x: hidden;
-}
-
-/* Custom premium scrollbar */
+/* Custom premium scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #e7e5e4;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #d6d3d1;
+  background: rgba(168, 139, 96, 0.2);
+  border-radius: 99px;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 139, 96, 0.4);
+}
+
+/* Text selections matching premium look */
+::selection {
+  background-color: #F2EAD8;
+  color: #1C1816;
+}
+
+/* Custom Shake Animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.6s ease-in-out;
+}
+
+/* Golden Sheen Shimmer effect */
+@keyframes sheen {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+.sheen-effect {
+  position: relative;
+  overflow: hidden;
+}
+
+.sheen-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-25deg);
+  animation: sheen 6s infinite;
+}
+
+/* Micro dots background mesh for vintage cafe paper */
+.paper-grid {
+  background-size: 24px 24px;
+  background-image: radial-gradient(circle, #e7e2d9 1px, transparent 1px);
+}

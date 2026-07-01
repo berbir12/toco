@@ -8,7 +8,13 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
-import { MENU_ITEMS } from "./src/data/menuData";
+import { MENU_ITEMS } from "./src/data/menuData.ts";
+
+// Database & Auth
+import { db } from "./src/db/index.ts";
+import { orders, orderItems, users } from "./src/db/schema.ts";
+import { requireAuth, requireRole, AuthRequest } from "./src/middleware/auth.ts";
+import { desc, eq, and, sql } from "drizzle-orm";
 
 dotenv.config();
 
@@ -27,8 +33,27 @@ const ai = new GoogleGenAI({
   },
 });
 
-// System instructions for the Toco Speciality Assistant
-const SYSTEM_INSTRUCTION = `
+// System instructions function for the Toco Speciality Assistant
+function getSystemInstruction(menuItems: any[]) {
+  const categories = ["Speciality Coffees", "Signature Dishes", "Desserts"];
+  let menuSectionStr = "";
+
+  categories.forEach((cat, idx) => {
+    menuSectionStr += `\n${idx + 1}. ${cat}:\n`;
+    const items = menuItems.filter((i) => i.category === cat);
+    if (items.length === 0) {
+      menuSectionStr += "   *(No items currently in this section)*\n";
+    } else {
+      items.forEach((item) => {
+        const optionsStr = item.options && item.options.length > 0 
+          ? ` Options/Choices: ${item.options.join(", ")}.` 
+          : "";
+        menuSectionStr += `   - **${item.name}** - $${Number(item.price).toFixed(2)}: ${item.description}.${optionsStr}\n`;
+      });
+    }
+  });
+
+  return `
 You are the official AI assistant for "Toco Speciality", a modern, premium restaurant and coffee lounge. 
 Your tone is warm, professional, sophisticated, and highly efficient. Keep responses concise and structured so customers can navigate their dining experience effortlessly.
 
@@ -38,23 +63,7 @@ Your tone is warm, professional, sophisticated, and highly efficient. Keep respo
 
 ### Core Menu & Sections
 Here is our official menu of delicacies:
-1. Speciality Coffees:
-   - **Toco Signature Gold Latte** - $6.50: Espresso, silky microfoamed milk, organic honey, dusted with 24k edible gold flakes. Milk choices: Whole Milk (Standard), Oat Milk (+$0.50), Almond Milk (+$0.50), Soy Milk (+$0.50).
-   - **Spanish Rose Latte** - $5.75: Espresso, sweet condensed milk, organic rose water syrup, steamed milk. Milk choices available.
-   - **Pistachio Cortado** - $5.50: Double shot espresso, warm textured oat milk, premium house-made pistachio praline cream.
-   - **Cold Brew Tonic** - $5.25: 18-hour slow-dripped organic cold brew, Mediterranean tonic, blood orange slice. Customizations: Standard Ice, Less Ice, Extra Tonic.
-   - **Classic Espresso** - $3.50: Double shot single-origin Ethiopian beans with jasmine, citrus notes.
-
-2. Signature Dishes:
-   - **Truffle Mushroom Toast** - $14.50: Sautéed wild forest mushrooms, white truffle oil, whipped ricotta, toasted artisanal sourdough, microgreens.
-   - **Smashed Avocado & Feta** - $13.00: Hass avocados, Danish feta, pomegranate seeds, chili flakes, poached free-range egg, black sesame on sourdough.
-   - **Brioche French Toast** - $12.50: Thick-cut custard brioche, organic maple syrup, fresh berries, vanilla bean mascarpone, edible flowers.
-   - **Smoked Salmon Bagel** - $15.00: Cured Scottish cold-smoked salmon, organic chive cream cheese, pickled red onions, nonpareil capers, fresh dill on toasted bagel.
-
-3. Desserts:
-   - **Matcha Tiramisu** - $8.50: Premium ceremonial-grade Uji matcha, ladyfingers soaked in green tea liqueur, mascarpone cream.
-   - **Saffron Cardamom Pistachio Tart** - $9.00: Crisp vanilla shell, Persian saffron custard, cardamom pistachio crumble, white chocolate ganache.
-   - **Salted Caramel Pecan Brownie** - $7.00: Dark chocolate brownie, roasted pecans, sea salt, premium Madagascan vanilla bean ice cream scoop.
+${menuSectionStr}
 
 ### Core Capabilities & Workflows
 
@@ -80,19 +89,278 @@ Here is our official menu of delicacies:
 - If a request is completely unrelated to Toco Speciality dining (e.g. coding questions, general knowledge, other restaurants), politely steer them back to their dining experience at Toco Speciality.
 - Respond in structured JSON only, using the defined response schema.
 `;
+}
+
+// ==================== DATABASE & AUTH ENDPOINTS ====================
+
+// Get profile of currently signed in user
+app.get("/api/me", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    res.json(req.user);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create a new order (Securely associated with customer UID)
+app.post("/api/orders", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id, items, subtotal, vat, serviceCharge, total, tableNumber } = req.body;
+    if (!id || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Missing required order information." });
+    }
+
+    const orderId = String(id);
+
+    await db.transaction(async (tx) => {
+      // 1. Insert order
+      await tx.insert(orders).values({
+        id: orderId,
+        userId: req.user?.uid || null,
+        subtotal: Number(subtotal),
+        vat: Number(vat),
+        serviceCharge: Number(serviceCharge),
+        total: Number(total),
+        status: "Received",
+        statusNote: "Order successfully submitted to kitchen.",
+        tableNumber: tableNumber || "00",
+        paymentConfirmed: false,
+      });
+
+      // 2. Insert items
+      for (const item of items) {
+        await tx.insert(orderItems).values({
+          orderId: orderId,
+          menuItemId: String(item.menuItemId),
+          name: String(item.name),
+          price: Number(item.price),
+          quantity: Number(item.quantity),
+          customization: item.customization || {},
+        });
+      }
+    });
+
+    // Retrieve full created order to return
+    const createdOrder = await db.query.orders.findFirst({
+      where: eq(orders.id, orderId),
+      with: {
+        items: true,
+      },
+    });
+
+    res.status(201).json(createdOrder);
+  } catch (error: any) {
+    console.error("Error creating order:", error);
+    res.status(500).json({ error: "Failed to place order. Database transaction failed." });
+  }
+});
+
+// Retrieve orders (Customers see only their own, Staff & Admins see all)
+app.get("/api/orders", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const role = req.user?.role || "customer";
+
+    let fetchedOrders;
+    if (role === "admin" || role === "staff") {
+      fetchedOrders = await db.query.orders.findMany({
+        with: {
+          items: true,
+        },
+        orderBy: [desc(orders.createdAt)],
+      });
+    } else {
+      fetchedOrders = await db.query.orders.findMany({
+        where: eq(orders.userId, req.user?.uid || ""),
+        with: {
+          items: true,
+        },
+        orderBy: [desc(orders.createdAt)],
+      });
+    }
+
+    res.json(fetchedOrders);
+  } catch (error: any) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({ error: "Failed to retrieve orders." });
+  }
+});
+
+// Update order status (Staff / Admin only)
+app.patch("/api/orders/:id/status", requireAuth, requireRole(["staff", "admin"]), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { status, statusNote } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: "Status is required." });
+    }
+
+    const updated = await db
+      .update(orders)
+      .set({
+        status,
+        statusNote: statusNote || "",
+      })
+      .where(eq(orders.id, id))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    // Get order with items
+    const fullOrder = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+      with: {
+        items: true,
+      },
+    });
+
+    res.json(fullOrder);
+  } catch (error: any) {
+    console.error("Error updating order status:", error);
+    res.status(500).json({ error: "Failed to update order status." });
+  }
+});
+
+// Settle bill / confirm payment
+app.patch("/api/orders/:id/payment", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod } = req.body;
+
+    if (!paymentMethod) {
+      return res.status(400).json({ error: "Payment method is required." });
+    }
+
+    const updated = await db
+      .update(orders)
+      .set({
+        paymentConfirmed: true,
+        paymentMethod,
+      })
+      .where(eq(orders.id, id))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const fullOrder = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+      with: {
+        items: true,
+      },
+    });
+
+    res.json(fullOrder);
+  } catch (error: any) {
+    console.error("Error completing payment:", error);
+    res.status(500).json({ error: "Failed to process payment registration." });
+  }
+});
+
+// Get users list (Admin only)
+app.get("/api/admin/users", requireAuth, requireRole(["admin"]), async (req: AuthRequest, res) => {
+  try {
+    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+    res.json(allUsers);
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to retrieve user accounts." });
+  }
+});
+
+// Update user role (Admin only)
+app.patch("/api/admin/users/:uid/role", requireAuth, requireRole(["admin"]), async (req: AuthRequest, res) => {
+  try {
+    const { uid } = req.params;
+    const { role } = req.body;
+
+    if (!role || !["customer", "staff", "admin"].includes(role)) {
+      return res.status(400).json({ error: "Invalid role specified." });
+    }
+
+    const updated = await db
+      .update(users)
+      .set({ role })
+      .where(eq(users.uid, uid))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "User profile not found." });
+    }
+
+    res.json(updated[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to update user privilege level." });
+  }
+});
+
+// Admin stats endpoint
+app.get("/api/admin/stats", requireAuth, requireRole(["admin"]), async (req: AuthRequest, res) => {
+  try {
+    // 1. Total revenue
+    const revResult = await db
+      .select({ total: sql<number>`COALESCE(SUM(${orders.total}), 0)` })
+      .from(orders)
+      .where(eq(orders.paymentConfirmed, true));
+    
+    const revenue = Number(revResult[0]?.total || 0);
+
+    // 2. Count orders
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(orders);
+    
+    const totalOrders = Number(countResult[0]?.count || 0);
+
+    // 3. Count customers
+    const custResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users)
+      .where(eq(users.role, "customer"));
+    
+    const totalCustomers = Number(custResult[0]?.count || 0);
+
+    // 4. Category breakdown (using subqueries/joins)
+    const categoryQuery = await db
+      .select({
+        name: orderItems.name,
+        qty: sql<number>`SUM(${orderItems.quantity})`,
+      })
+      .from(orderItems)
+      .groupBy(orderItems.name)
+      .orderBy(sql`SUM(${orderItems.quantity}) DESC`)
+      .limit(5);
+
+    res.json({
+      revenue,
+      totalOrders,
+      totalCustomers,
+      topItems: categoryQuery.map(row => ({
+        name: row.name,
+        value: Number(row.qty),
+      })),
+    });
+  } catch (error: any) {
+    console.error("Stats aggregation failure:", error);
+    res.status(500).json({ error: "Failed to aggregate business statistics." });
+  }
+});
+
+// ==================== ARTIFICIAL INTELLIGENCE CONCIERGE ====================
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, history, cart, orderStatus } = req.body;
+    const { message, history, cart, orderStatus, menuItems } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // Prepare content history for the model
+    const activeMenuItems = menuItems && Array.isArray(menuItems) ? menuItems : MENU_ITEMS;
     const contents: any[] = [];
 
-    // Provide the current state of the application to the model as a system hint
     const stateContextPrompt = `
 CURRENT SYSTEM STATE CONTEXT HINT (DO NOT OUTPUT DIRECTLY UNLESS RELEVANT):
 - Current Visual Cart Items: ${cart && cart.length > 0 ? JSON.stringify(cart) : "Empty"}
@@ -105,7 +373,6 @@ CURRENT SYSTEM STATE CONTEXT HINT (DO NOT OUTPUT DIRECTLY UNLESS RELEVANT):
       parts: [{ text: stateContextPrompt }],
     });
 
-    // Stagger previous conversation history
     if (history && Array.isArray(history)) {
       history.slice(-10).forEach((msg: any) => {
         contents.push({
@@ -115,7 +382,6 @@ CURRENT SYSTEM STATE CONTEXT HINT (DO NOT OUTPUT DIRECTLY UNLESS RELEVANT):
       });
     }
 
-    // Add current user prompt
     contents.push({
       role: "user",
       parts: [{ text: message }],
@@ -125,7 +391,7 @@ CURRENT SYSTEM STATE CONTEXT HINT (DO NOT OUTPUT DIRECTLY UNLESS RELEVANT):
       model: "gemini-3.5-flash",
       contents: contents,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: getSystemInstruction(activeMenuItems),
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
