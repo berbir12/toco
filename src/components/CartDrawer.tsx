@@ -15,6 +15,7 @@ interface CartDrawerProps {
   onPlaceOrder: (tableNumber: string) => void;
   activeOrder: Order | null;
   onConfirmPayment: (method: string) => void;
+  onPayWithChapa: () => Promise<void>;
   tableNumber: string;
   setTableNumber: (num: string) => void;
 }
@@ -26,11 +27,13 @@ export default function CartDrawer({
   onPlaceOrder,
   activeOrder,
   onConfirmPayment,
+  onPayWithChapa,
   tableNumber,
   setTableNumber,
 }: CartDrawerProps) {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isChapaLoading, setIsChapaLoading] = useState<boolean>(false);
   const [tipPercentage, setTipPercentage] = useState<number>(15);
 
   // Bill Calculations for Cart
@@ -131,7 +134,7 @@ export default function CartDrawer({
                       {item.name} <span className="text-stone-400 font-normal">x{item.quantity}</span>
                     </span>
                     <span className="text-stone-800 font-mono font-semibold">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {(item.price * item.quantity).toFixed(2)} ETB
                     </span>
                   </div>
                   {item.customization && (item.customization.milk || item.customization.notes) && (
@@ -150,7 +153,7 @@ export default function CartDrawer({
                       {item.name}
                     </span>
                     <span className="text-stone-800 font-mono font-semibold">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {(item.price * item.quantity).toFixed(2)} ETB
                     </span>
                   </div>
                   
@@ -226,20 +229,20 @@ export default function CartDrawer({
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-stone-500 font-sans">
               <span>Subtotal</span>
-              <span className="font-mono text-stone-700">${activeSubtotal.toFixed(2)}</span>
+              <span className="font-mono text-stone-700">{activeSubtotal.toFixed(2)} ETB</span>
             </div>
             <div className="flex justify-between text-xs text-stone-500 font-sans">
               <span>VAT (10%)</span>
-              <span className="font-mono text-stone-700">${activeVat.toFixed(2)}</span>
+              <span className="font-mono text-stone-700">{activeVat.toFixed(2)} ETB</span>
             </div>
             <div className="flex justify-between text-xs text-stone-500 font-sans">
               <span>Gratitude / Tip ({activeOrder ? "Included" : `${tipPercentage}%`})</span>
-              <span className="font-mono text-stone-700">${activeServiceCharge.toFixed(2)}</span>
+              <span className="font-mono text-stone-700">{activeServiceCharge.toFixed(2)} ETB</span>
             </div>
             <div className="flex justify-between text-sm font-serif font-black text-stone-950 pt-2 border-t border-stone-150">
               <span>Grand Total</span>
               <span className="font-mono text-base text-gold-700">
-                ${activeTotal.toFixed(2)}
+                {activeTotal.toFixed(2)} ETB
               </span>
             </div>
           </div>
@@ -269,15 +272,37 @@ export default function CartDrawer({
               </span>
             </div>
 
-            {isProcessing ? (
+            {isProcessing || isChapaLoading ? (
               <div className="bg-white py-6 rounded-2xl border border-stone-200 flex flex-col items-center justify-center gap-2">
                 <div className="w-6 h-6 border-2 border-gold-600 border-t-transparent rounded-full animate-spin" />
                 <span className="text-[11px] font-sans font-medium text-stone-500 animate-pulse uppercase tracking-wider">
-                  Contacting Bank...
+                  {isChapaLoading ? "Opening Chapa Secure Gateway..." : "Contacting Bank..."}
                 </span>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-1.5">
+                <button
+                  onClick={async () => {
+                    setIsChapaLoading(true);
+                    try {
+                      await onPayWithChapa();
+                    } catch (err) {
+                      console.error(err);
+                    } finally {
+                      setIsChapaLoading(false);
+                    }
+                  }}
+                  className="flex items-center justify-between bg-gradient-to-r from-[#5a3f9c] to-[#452c80] hover:from-[#4d3289] hover:to-[#381f6d] text-white p-3.5 rounded-xl transition-all text-xs font-sans font-black uppercase tracking-wider cursor-pointer border border-[#452c80] shadow-md hover:scale-101"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="flex gap-0.5 items-center bg-white/10 px-1.5 py-0.5 rounded text-[8px] font-bold text-yellow-300 border border-white/5">
+                      🇪🇹 ETB
+                    </span>
+                    Pay with Chapa (Mobile)
+                  </span>
+                  <span className="font-mono text-[9px] text-gold-300 tracking-wider font-extrabold bg-black/20 px-2 py-0.5 rounded-full">RECOMMENDED</span>
+                </button>
+
                 <button
                   onClick={() => handlePay("Google Pay")}
                   className="flex items-center justify-between bg-stone-950 text-white hover:bg-stone-900 p-3 rounded-xl transition-colors text-xs font-sans font-bold uppercase tracking-wider cursor-pointer border border-stone-900"
@@ -321,7 +346,7 @@ export default function CartDrawer({
             <div>
               <h4 className="font-sans font-bold text-xs uppercase tracking-wide text-stone-900">Transaction Approved</h4>
               <p className="text-[11px] text-emerald-800 mt-1 font-light leading-relaxed">
-                Bill settled for <strong>${orderTotal.toFixed(2)}</strong> via <strong>{activeOrder.paymentMethod || "Apple Pay"}</strong>. It has been registered on our ledgers.
+                Bill settled for <strong>{orderTotal.toFixed(2)} ETB</strong> via <strong>{activeOrder.paymentMethod || "Apple Pay"}</strong>. It has been registered on our ledgers.
               </p>
             </div>
           </div>

@@ -65,6 +65,39 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
   }
 
   const token = authHeader.split("Bearer ")[1];
+
+  // 1. Handle Passcode Auth for Staff / Admin
+  if (token === "passcode_888888") {
+    req.user = {
+      uid: "admin_passcode",
+      email: "admin@tocospeciality.com",
+      role: "admin",
+      dbId: 888888,
+    };
+    return next();
+  }
+
+  if (token === "passcode_222222") {
+    req.user = {
+      uid: "staff_passcode",
+      email: "staff@tocospeciality.com",
+      role: "staff",
+      dbId: 222222,
+    };
+    return next();
+  }
+
+  // 2. Handle Guest Sessions for scanning customers
+  if (token.startsWith("guest_")) {
+    req.user = {
+      uid: token,
+      email: "guest@tocospeciality.com",
+      role: "customer",
+      dbId: 999999,
+    };
+    return next();
+  }
+
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     const email = decodedToken.email || "";

@@ -22,13 +22,16 @@ import {
 import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth, googleAuthProvider } from "./lib/firebase.ts";
 
-const INITIAL_TABLES: TableConfig[] = [
-  { id: "t1", tableNumber: "01", seatsCount: 2, status: "Available" },
-  { id: "t2", tableNumber: "03", seatsCount: 4, status: "Available" },
-  { id: "t3", tableNumber: "07", seatsCount: 4, status: "Available" },
-  { id: "t4", tableNumber: "10", seatsCount: 6, status: "Available" },
-  { id: "t5", tableNumber: "14", seatsCount: 2, status: "Available" },
-];
+const INITIAL_TABLES: TableConfig[] = Array.from({ length: 20 }, (_, i) => {
+  const num = String(i + 1).padStart(2, "0");
+  const seats = [2, 4, 6][i % 3];
+  return {
+    id: `t${i + 1}`,
+    tableNumber: num,
+    seatsCount: seats,
+    status: "Available"
+  };
+});
 
 export default function App() {
   // Hash Routing State
@@ -71,6 +74,18 @@ export default function App() {
     },
   ]);
 
+  // Subdomain auto-routing for cPanel deployment
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    if (hostname.includes("stafftoco")) {
+      window.location.hash = "#/staff";
+    } else if (hostname.includes("admintoco")) {
+      window.location.hash = "#/admin";
+    } else if (hostname.includes("tocospecialty")) {
+      window.location.hash = "#/";
+    }
+  }, []);
+
   // URL Hash Listener & Router Sync
   useEffect(() => {
     const handleHashChange = () => {
@@ -93,51 +108,43 @@ export default function App() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  // Firebase Auth Observer & Sync Profile
+  // Guest and passcode-based session initialization
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setIsLoadingAuth(true);
-      if (user) {
-        setFirebaseUser(user);
-        try {
-          const token = await user.getIdToken(true);
-          setAuthToken(token);
+    setIsLoadingAuth(true);
+    let token = localStorage.getItem("toco_auth_token");
+    if (!token) {
+      // Generate a clean guest customer ID automatically
+      token = `guest_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem("toco_auth_token", token);
+    }
 
-          const res = await fetch("/api/me", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          if (res.ok) {
-            const profile = await res.json();
-            setUserProfile(profile);
+    setAuthToken(token);
 
-            // Set role authorizations
-            if (profile.role === "admin") {
-              setAdminAuthorized(true);
-              setStaffAuthorized(true);
-            } else if (profile.role === "staff") {
-              setStaffAuthorized(true);
-              setAdminAuthorized(false);
-            } else {
-              setStaffAuthorized(false);
-              setAdminAuthorized(false);
-            }
-          }
-        } catch (err) {
-          console.error("Authentication check failed:", err);
-        }
+    if (token.startsWith("passcode_")) {
+      const code = token.split("passcode_")[1];
+      if (code === "888888") {
+        setUserProfile({ uid: "admin_passcode", email: "admin@tocospeciality.com", role: "admin", dbId: 888888 });
+        setAdminAuthorized(true);
+        setStaffAuthorized(true);
+      } else if (code === "222222") {
+        setUserProfile({ uid: "staff_passcode", email: "staff@tocospeciality.com", role: "staff", dbId: 222222 });
+        setStaffAuthorized(true);
+        setAdminAuthorized(false);
       } else {
-        setFirebaseUser(null);
-        setUserProfile(null);
-        setAuthToken(null);
+        // Invalid passcode fallback to guest session
+        const guestToken = `guest_${Math.random().toString(36).substring(2, 11)}`;
+        localStorage.setItem("toco_auth_token", guestToken);
+        setAuthToken(guestToken);
+        setUserProfile({ uid: guestToken, email: "guest@tocospeciality.com", role: "customer", dbId: 999999 });
         setStaffAuthorized(false);
         setAdminAuthorized(false);
       }
-      setIsLoadingAuth(false);
-    });
-
-    return () => unsubscribe();
+    } else {
+      setUserProfile({ uid: token, email: "guest@tocospeciality.com", role: "customer", dbId: 999999 });
+      setStaffAuthorized(false);
+      setAdminAuthorized(false);
+    }
+    setIsLoadingAuth(false);
   }, []);
 
   // Fetch Database Orders
@@ -176,6 +183,53 @@ export default function App() {
       if (interval) clearInterval(interval);
     };
   }, [authToken, userProfile?.role]);
+
+  // Handle redirect from Chapa payment
+  useEffect(() => {
+    if (!authToken) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get("payment_success");
+    const orderId = params.get("order_id");
+    const isMock = params.get("mock_chapa");
+
+    if ((success === "true" || isMock === "true") && orderId) {
+      const verifyChapaPayment = async () => {
+        try {
+          const res = await fetch(`/api/orders/${orderId}/chapa-verify`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+          if (res.ok) {
+            const updatedOrder = await res.json();
+            // Sync orders state
+            setOrders((prev) =>
+              prev.map((o) => (o.id === orderId ? updatedOrder : o))
+            );
+            
+            // Add a pleasant success message to chat logs
+            const msg: Message = {
+              id: `chapa-paid-${Date.now()}`,
+              sender: "assistant",
+              text: `🌟 **Chapa Payment Verified!**\n\nYour transaction has been securely confirmed via **Chapa Mobile**. Thank you for dining with Toco Speciality! Your table host is ready to make your experience perfect.`,
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            };
+            setMessages((prev) => [...prev, msg]);
+
+            // Clear URL search parameters so they don't trigger on reload
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+          }
+        } catch (err) {
+          console.error("Verification error:", err);
+        }
+      };
+
+      verifyChapaPayment();
+    }
+  }, [authToken]);
 
   // Fetch registered users (Admins only)
   const fetchUsersFromDB = async () => {
@@ -252,8 +306,16 @@ export default function App() {
     if (savedMenu) setMenuItems(JSON.parse(savedMenu));
     else setMenuItems(MENU_ITEMS);
 
-    if (savedTables) setTables(JSON.parse(savedTables));
-    else setTables(INITIAL_TABLES);
+    if (savedTables) {
+      const parsed = JSON.parse(savedTables);
+      if (parsed.length < 20) {
+        setTables(INITIAL_TABLES);
+      } else {
+        setTables(parsed);
+      }
+    } else {
+      setTables(INITIAL_TABLES);
+    }
 
     if (savedCart) setCart(JSON.parse(savedCart));
     else setCart([]);
@@ -261,8 +323,17 @@ export default function App() {
     if (savedActiveOrderId) setActiveOrderId(savedActiveOrderId);
     else setActiveOrderId(null);
 
-    if (savedTableNumber) setTableNumber(savedTableNumber);
-    else setTableNumber("07");
+    // Parse table from URL if present (e.g. ?table=03 or #/?table=03)
+    const urlParams = new URLSearchParams(window.location.search || window.location.hash.includes("?") ? window.location.hash.split("?")[1] : "");
+    const tableParam = urlParams.get("table");
+    if (tableParam) {
+      setTableNumber(tableParam);
+      localStorage.setItem("toco_tableNumber", tableParam);
+    } else if (savedTableNumber) {
+      setTableNumber(savedTableNumber);
+    } else {
+      setTableNumber("07");
+    }
 
     if (savedMessages) setMessages(JSON.parse(savedMessages));
   }, []);
@@ -294,12 +365,14 @@ export default function App() {
   }, [messages]);
 
   // Auth local storage sync helpers
-  const handleLockSession = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error("Sign out error:", err);
-    }
+  const handleLockSession = () => {
+    // Return to a guest customer token
+    const guestToken = `guest_${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem("toco_auth_token", guestToken);
+    setAuthToken(guestToken);
+    setUserProfile({ uid: guestToken, email: "guest@tocospeciality.com", role: "customer", dbId: 999999 });
+    setStaffAuthorized(false);
+    setAdminAuthorized(false);
     setPinInput("");
     setPinError(null);
     navigateTo("customer");
@@ -310,35 +383,44 @@ export default function App() {
       setStaffAuthorized(true);
     } else {
       setAdminAuthorized(true);
+      setStaffAuthorized(true);
     }
     setPinInput("");
     setPinError(null);
   };
 
-  // Interactive PIN pad click
+  // Interactive PIN pad click (6-digit passcode)
   const handlePinKeyPress = (val: string) => {
     setPinError(null);
-    if (pinInput.length >= 4) return;
+    if (pinInput.length >= 6) return;
     const nextPin = pinInput + val;
     setPinInput(nextPin);
 
-    // Auto trigger submission when reaching 4 digits
-    if (nextPin.length === 4) {
+    // Auto trigger submission when reaching 6 digits
+    if (nextPin.length === 6) {
       setIsAuthenticating(true);
       setTimeout(() => {
         setIsAuthenticating(false);
         if (currentView === "staff") {
-          if (nextPin === "5678") {
+          if (nextPin === "222222") {
+            const token = "passcode_222222";
+            localStorage.setItem("toco_auth_token", token);
+            setAuthToken(token);
+            setUserProfile({ uid: "staff_passcode", email: "staff@tocospeciality.com", role: "staff", dbId: 222222 });
             handleAuthorizeSuccess("staff");
           } else {
-            setPinError("Invalid Security Passcode");
+            setPinError("Invalid Staff Passcode (6 digits)");
             setPinInput("");
           }
         } else if (currentView === "admin") {
-          if (nextPin === "1234") {
+          if (nextPin === "888888") {
+            const token = "passcode_888888";
+            localStorage.setItem("toco_auth_token", token);
+            setAuthToken(token);
+            setUserProfile({ uid: "admin_passcode", email: "admin@tocospeciality.com", role: "admin", dbId: 888888 });
             handleAuthorizeSuccess("admin");
           } else {
-            setPinError("Invalid Administration Key");
+            setPinError("Invalid Administration Passcode (6 digits)");
             setPinInput("");
           }
         }
@@ -408,7 +490,7 @@ export default function App() {
   const handlePlaceOrder = async (tableNum: string) => {
     if (cart.length === 0) return;
     if (!authToken) {
-      alert("Please Sign In with Google before placing an order to secure your dining session.");
+      alert("Initializing your guest lounge session. Please try again in a brief second.");
       return;
     }
 
@@ -499,6 +581,36 @@ export default function App() {
       }
     } catch (err) {
       console.error("Payment error:", err);
+    }
+  };
+
+  const handleChapaPayment = async () => {
+    const activeOrder = getActiveOrder();
+    if (!activeOrder || !authToken) return;
+    
+    try {
+      const res = await fetch(`/api/orders/${activeOrder.id}/chapa-initialize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.checkoutUrl) {
+          // Open Chapa checkout link
+          window.open(data.checkoutUrl, "_blank");
+        } else {
+          alert("Unable to generate payment link. Please try again.");
+        }
+      } else {
+        const err = await res.json();
+        alert(`Failed to initialize Chapa payment: ${err.error || err.message}`);
+      }
+    } catch (err) {
+      console.error("Chapa initialization error:", err);
+      alert("Network error while connecting to Chapa payment system.");
     }
   };
 
@@ -711,58 +823,29 @@ export default function App() {
           {/* Minimalist Right Header Actions */}
           <div className="flex items-center gap-4">
             
-            {/* Show current location indicator */}
+            {/* Show current location indicator for customers */}
             {currentView === "customer" && (
-              <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-stone-500 uppercase tracking-wider bg-stone-100 px-3.5 py-1.5 rounded-full border border-stone-200">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                Lounge Session Table {tableNumber}
+              <div className="flex items-center gap-2 text-xs font-mono text-stone-600 uppercase tracking-wider bg-stone-100 px-4 py-2 rounded-full border border-stone-200 shadow-2xs">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                Lounge Session • Table {tableNumber}
               </div>
             )}
 
-            {/* Google Identity Header Widget */}
-            {firebaseUser ? (
+            {/* Staff / Admin authorized controls */}
+            {currentView !== "customer" && !isViewBlocked && (
               <div className="flex items-center gap-3">
-                <div className="hidden md:flex flex-col items-end text-right">
-                  <span className="text-xs font-bold text-stone-850">{firebaseUser.displayName || "Lounge Guest"}</span>
-                  <span className="text-[9px] font-mono text-stone-400 capitalize">{userProfile?.role || "customer"} Account</span>
+                <div className="hidden sm:flex flex-col items-end text-right">
+                  <span className="text-xs font-bold text-stone-850 capitalize">{userProfile?.role || "Staff"} Terminal</span>
+                  <span className="text-[9px] font-mono text-stone-400">Secure Passcode Session</span>
                 </div>
-                {firebaseUser.photoURL ? (
-                  <img
-                    src={firebaseUser.photoURL}
-                    alt="avatar"
-                    referrerPolicy="no-referrer"
-                    className="w-8 h-8 rounded-full border border-stone-200"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-gold-100 border border-gold-200 flex items-center justify-center text-xs font-bold text-gold-700 font-mono">
-                    {(firebaseUser.email || "G")[0].toUpperCase()}
-                  </div>
-                )}
                 <button
-                  onClick={() => signOut(auth)}
-                  className="bg-stone-100 hover:bg-stone-200 text-stone-600 px-3 py-1.5 rounded-lg text-xs font-display font-medium transition-colors cursor-pointer"
+                  onClick={handleLockSession}
+                  className="flex items-center gap-1.5 bg-stone-950 text-gold-200 hover:bg-gold-600 hover:text-stone-950 px-4 py-2 rounded-xl text-xs font-display font-semibold uppercase tracking-wider transition-all duration-300 shadow-md cursor-pointer"
                 >
-                  Sign Out
+                  <LogOut className="w-3.5 h-3.5" />
+                  Lock Portal
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => signInWithPopup(auth, googleAuthProvider)}
-                className="bg-stone-950 text-gold-200 hover:bg-gold-600 hover:text-stone-950 px-3.5 py-1.5 rounded-xl text-xs font-display font-semibold transition-all shadow-sm cursor-pointer"
-              >
-                Sign In
-              </button>
-            )}
-
-            {currentView !== "customer" && (
-              // Exit secure portal button for staff/admin
-              <button
-                onClick={handleLockSession}
-                className="flex items-center gap-1.5 bg-stone-950 text-gold-200 hover:bg-gold-600 hover:text-stone-950 px-4 py-2 rounded-xl text-xs font-display font-semibold uppercase tracking-wider transition-all duration-300 shadow-md cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                Lock Portal
-              </button>
             )}
           </div>
         </div>
@@ -781,12 +864,12 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.3 }}
-              className="max-w-md mx-auto my-12"
+              className="max-w-md mx-auto my-8"
             >
-              <div className="bg-[#1A1816] text-[#F3EFEB] rounded-3xl p-8 shadow-2xl border border-stone-850 flex flex-col items-center">
+              <div className="bg-[#1A1816] text-[#F3EFEB] rounded-3xl p-8 shadow-2xl border border-stone-800 flex flex-col items-center">
                 
                 {/* Padlock Icon Header */}
-                <div className="w-16 h-16 bg-gradient-to-br from-gold-500 to-gold-700 text-stone-950 rounded-2xl flex items-center justify-center mb-6 shadow-xl relative">
+                <div className="w-16 h-16 bg-gradient-to-br from-gold-500 to-gold-700 text-stone-950 rounded-2xl flex items-center justify-center mb-5 shadow-xl relative">
                   <Lock className="w-7 h-7" />
                   <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#1A1816]" />
                 </div>
@@ -794,66 +877,80 @@ export default function App() {
                 <span className="text-[10px] font-mono tracking-[0.25em] text-gold-400 uppercase font-black">
                   Toco Lounge Terminal
                 </span>
-                <h2 className="text-2xl font-serif font-medium text-stone-100 mt-2 text-center">
-                  {currentView === "staff" ? "Staff Operations" : "Boutique Administration"}
+                <h2 className="text-xl font-serif font-medium text-stone-100 mt-2 text-center">
+                  {currentView === "staff" ? "Staff Operations Gate" : "Boutique Administration Gate"}
                 </h2>
 
-                {!firebaseUser ? (
-                  <>
-                    <p className="text-stone-400 text-xs mt-2.5 text-center max-w-[300px] font-light leading-relaxed">
-                      This terminal is restricted. Please authenticate using your Google account to verify your role.
-                    </p>
+                <p className="text-stone-400 text-xs mt-2 text-center max-w-[300px] font-light leading-relaxed">
+                  Please key in the 6-digit terminal passcode to access this section.
+                </p>
 
-                    <button
-                      onClick={() => signInWithPopup(auth, googleAuthProvider)}
-                      className="w-full mt-8 bg-white text-stone-900 hover:bg-stone-100 py-3.5 px-6 rounded-xl font-display font-bold text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer flex items-center justify-center gap-2.5"
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.66-1-.66-2.09-.66-3.09s0-2.09.66-3.09z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                        />
-                      </svg>
-                      Sign In with Google
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-red-400 text-xs mt-3 text-center max-w-[300px] font-medium bg-red-950/30 border border-red-900/40 p-3 rounded-xl">
-                      Access Denied: Your Google account ({firebaseUser.email}) does not have staff or administrator role permissions.
-                    </p>
+                {/* 6-digit Display Slots */}
+                <div className="flex gap-2.5 my-6 justify-center">
+                  {Array.from({ length: 6 }).map((_, idx) => {
+                    const isFilled = idx < pinInput.length;
+                    return (
+                      <div
+                        key={idx}
+                        className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                          isFilled
+                            ? "bg-gold-500 shadow-[0_0_10px_#D97706] scale-110"
+                            : "bg-stone-900 border border-stone-700"
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
 
-                    <p className="text-stone-400 text-[11px] mt-4 text-center leading-normal">
-                      Please sign out below and use an authorized account, or contact the café system manager to grant roles on the register database.
-                    </p>
-
-                    <div className="flex flex-col gap-3 w-full mt-6">
-                      <button
-                        onClick={() => signOut(auth)}
-                        className="w-full bg-stone-900 hover:bg-stone-850 text-white py-3 rounded-xl font-display font-semibold text-xs uppercase tracking-wider transition-colors cursor-pointer"
-                      >
-                        Sign Out / Switch Identity
-                      </button>
-                    </div>
-                  </>
+                {/* Error Banner */}
+                {pinError && (
+                  <div className="flex items-center gap-1.5 bg-red-950/40 text-red-400 border border-red-900/40 rounded-xl px-4 py-2.5 text-[11px] font-medium tracking-wide mb-6 max-w-xs text-center">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{pinError}</span>
+                  </div>
                 )}
+
+                {/* Tactile Keypad Grid */}
+                <div className="grid grid-cols-3 gap-3.5 w-full max-w-[280px]">
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
+                    <button
+                      key={num}
+                      onClick={() => handlePinKeyPress(num)}
+                      className="w-16 h-16 rounded-full bg-stone-900 hover:bg-stone-850 active:scale-95 text-xl font-sans font-bold text-stone-100 border border-stone-800/80 transition-all cursor-pointer flex items-center justify-center shadow-sm select-none"
+                    >
+                      {num}
+                    </button>
+                  ))}
+                  
+                  {/* Clear Button */}
+                  <button
+                    onClick={handlePinClear}
+                    className="w-16 h-16 rounded-full bg-stone-950 text-xs text-stone-400 hover:text-stone-200 active:scale-95 transition-all cursor-pointer flex items-center justify-center font-display uppercase tracking-widest font-black"
+                  >
+                    Clear
+                  </button>
+                  
+                  {/* Zero Button */}
+                  <button
+                    onClick={() => handlePinKeyPress("0")}
+                    className="w-16 h-16 rounded-full bg-stone-900 hover:bg-stone-850 active:scale-95 text-xl font-sans font-bold text-stone-100 border border-stone-800/80 transition-all cursor-pointer flex items-center justify-center shadow-sm select-none"
+                  >
+                    0
+                  </button>
+
+                  {/* Backspace Button */}
+                  <button
+                    onClick={handlePinDelete}
+                    className="w-16 h-16 rounded-full bg-stone-950 text-xs text-stone-400 hover:text-stone-200 active:scale-95 transition-all cursor-pointer flex items-center justify-center font-sans"
+                  >
+                    ⌫
+                  </button>
+                </div>
 
                 {/* Cancel link */}
                 <button
                   onClick={() => navigateTo("customer")}
-                  className="mt-6 text-xs text-stone-500 hover:text-stone-300 font-display font-medium uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1"
+                  className="mt-8 text-xs text-stone-500 hover:text-stone-300 font-display font-medium uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Return to Café
@@ -1008,6 +1105,7 @@ export default function App() {
                         onPlaceOrder={handlePlaceOrder}
                         activeOrder={activeOrder}
                         onConfirmPayment={handleConfirmPayment}
+                        onPayWithChapa={handleChapaPayment}
                         tableNumber={tableNumber}
                         setTableNumber={setTableNumber}
                       />
@@ -1044,26 +1142,6 @@ export default function App() {
                         <p className="text-[10px] text-stone-400 font-sans tracking-wide leading-relaxed">
                           Authorized Register Terminal • Secure checkout powered by Toco Lounge System. All rights reserved © 2026.
                         </p>
-                      </div>
-                      
-                      {/* Secure Portals Trigger Buttons */}
-                      <div className="flex items-center gap-2.5">
-                        <button
-                          id="btn-staff-portal"
-                          onClick={() => navigateTo("staff")}
-                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-[10px] font-sans font-bold uppercase tracking-[0.1em] text-stone-600 hover:text-stone-950 bg-white hover:bg-stone-50 border border-stone-200/70 hover:border-stone-400 transition-all duration-300 cursor-pointer shadow-2xs"
-                        >
-                          <ChefHat className="w-3.5 h-3.5 text-stone-400" />
-                          Staff Portal
-                        </button>
-                        <button
-                          id="btn-admin-portal"
-                          onClick={() => navigateTo("admin")}
-                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-[10px] font-sans font-bold uppercase tracking-[0.1em] text-stone-600 hover:text-stone-950 bg-white hover:bg-stone-50 border border-stone-200/70 hover:border-stone-400 transition-all duration-300 cursor-pointer shadow-2xs"
-                        >
-                          <Settings className="w-3.5 h-3.5 text-stone-400" />
-                          Admin System
-                        </button>
                       </div>
                     </div>
                   </footer>

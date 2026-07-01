@@ -141,7 +141,7 @@ export default function MenuSection({ menuItems, onAddToCart }: MenuSectionProps
 
                     {/* Price with classic Monospace styling */}
                     <span className="text-sm font-mono font-bold text-stone-950 bg-stone-50 px-3 py-1 rounded border border-stone-200 shadow-2xs">
-                      ${Number(item.price).toFixed(2)}
+                      {Number(item.price).toFixed(2)} ETB
                     </span>
                   </div>
 

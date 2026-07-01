@@ -260,6 +260,155 @@ app.patch("/api/orders/:id/payment", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
+// Chapa Payment Gateway: Initialize Transaction
+app.post("/api/orders/:id/chapa-initialize", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    
+    const order = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const chapaSecretKey = process.env.CHAPA_SECRET_KEY;
+    const isMockMode = !chapaSecretKey || chapaSecretKey.trim() === "";
+
+    if (isMockMode) {
+      // In Mock mode, we redirect to a mock checkout URL handled on our client
+      const mockCheckoutUrl = `${process.env.APP_URL || "http://localhost:3000"}/?mock_chapa=true&order_id=${id}&amount=${order.total}`;
+      return res.json({
+        checkoutUrl: mockCheckoutUrl,
+        isMock: true,
+        message: "Chapa sandbox mode initialized (No Secret Key configured)."
+      });
+    }
+
+    // Call real Chapa API
+    const txRef = `toco-${id}-${Date.now()}`;
+    
+    // We update the order statusNote with our generated txRef for subsequent verification
+    await db.update(orders)
+      .set({ statusNote: txRef })
+      .where(eq(orders.id, id));
+
+    const response = await fetch("https://api.chapa.co/v1/transaction/initialize", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${chapaSecretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: String(order.total),
+        currency: "ETB",
+        email: req.user?.email || "customer@tocospeciality.com",
+        first_name: req.user?.email ? req.user.email.split("@")[0] : "Customer",
+        last_name: "Lounge",
+        tx_ref: txRef,
+        callback_url: `${process.env.APP_URL}/api/payments/chapa-webhook`,
+        return_url: `${process.env.APP_URL}/?payment_success=true&order_id=${id}`,
+        customization: {
+          title: "Toco Speciality Lounge",
+          description: `Payment for Order #${id} on Table ${order.tableNumber}`,
+        }
+      })
+    });
+
+    const data: any = await response.json();
+
+    if (data.status === "success" && data.data && data.data.checkout_url) {
+      return res.json({
+        checkoutUrl: data.data.checkout_url,
+        isMock: false,
+        txRef: txRef
+      });
+    } else {
+      console.error("Chapa Initialization failure response:", data);
+      return res.status(400).json({ error: data.message || "Chapa service initialization failed." });
+    }
+  } catch (error: any) {
+    console.error("Error in chapa-initialize:", error);
+    res.status(500).json({ error: "Failed to connect to Chapa payment server." });
+  }
+});
+
+// Chapa Payment Gateway: Verify Transaction
+app.post("/api/orders/:id/chapa-verify", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    const order = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const chapaSecretKey = process.env.CHAPA_SECRET_KEY;
+    const isMockMode = !chapaSecretKey || chapaSecretKey.trim() === "";
+
+    if (isMockMode) {
+      // In Mock mode, we immediately approve
+      const updated = await db
+        .update(orders)
+        .set({
+          paymentConfirmed: true,
+          paymentMethod: "Chapa Sandbox",
+          statusNote: "Paid via Chapa sandbox simulation.",
+        })
+        .where(eq(orders.id, id))
+        .returning();
+
+      const fullOrder = await db.query.orders.findFirst({
+        where: eq(orders.id, id),
+        with: { items: true }
+      });
+
+      return res.json(fullOrder);
+    }
+
+    // Real Chapa verification
+    const txRef = order.statusNote || id;
+
+    const response = await fetch(`https://api.chapa.co/v1/transaction/verify/${txRef}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${chapaSecretKey}`,
+      }
+    });
+
+    const data: any = await response.json();
+
+    if (data.status === "success" && data.data && data.data.status === "success") {
+      const updated = await db
+        .update(orders)
+        .set({
+          paymentConfirmed: true,
+          paymentMethod: "Chapa",
+          statusNote: `Chapa Ref: ${txRef}`,
+        })
+        .where(eq(orders.id, id))
+        .returning();
+
+      const fullOrder = await db.query.orders.findFirst({
+        where: eq(orders.id, id),
+        with: { items: true }
+      });
+
+      return res.json(fullOrder);
+    } else {
+      console.error("Chapa verification failure response:", data);
+      return res.status(400).json({ error: "Chapa transaction verification failed." });
+    }
+  } catch (error: any) {
+    console.error("Error verifying Chapa payment:", error);
+    res.status(500).json({ error: "Failed to communicate with Chapa verification endpoint." });
+  }
+});
+
 // Get users list (Admin only)
 app.get("/api/admin/users", requireAuth, requireRole(["admin"]), async (req: AuthRequest, res) => {
   try {

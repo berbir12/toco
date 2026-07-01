@@ -3,9 +3,91 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { MenuItem, TableConfig, Order } from "../types";
-import { Plus, Trash2, Landmark, Coffee, Layers, Users, TrendingUp, RefreshCw, Eye, Sparkles, Check } from "lucide-react";
+import { Plus, Trash2, Landmark, Coffee, Layers, Users, TrendingUp, RefreshCw, Eye, Sparkles, Check, Download } from "lucide-react";
+
+interface TableQRCodeProps {
+  tableNumber: string;
+}
+
+export function TableQRCode({ tableNumber }: TableQRCodeProps) {
+  const [qrSrc, setQrSrc] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // The landing URL for scanning is configured to use the custom production domain
+  // so that even when administrators manage tables from the developer portal,
+  // the generated and printed physical QR codes correctly route customers to the production site.
+  const scanUrl = `https://tocospecialty.bitlabsbuild.com/?table=${tableNumber}`;
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    QRCode.toDataURL(
+      scanUrl,
+      {
+        width: 300,
+        margin: 2,
+        color: {
+          dark: "#1c1816", // Deep charcoal/black
+          light: "#ffffff", // Pure white for perfect scanning contrast
+        },
+      },
+      (err, url) => {
+        if (active) {
+          setLoading(false);
+          if (err) {
+            console.error(err);
+          } else {
+            setQrSrc(url);
+          }
+        }
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [tableNumber, scanUrl]);
+
+  const handleDownload = () => {
+    if (!qrSrc) return;
+    const link = document.createElement("a");
+    link.href = qrSrc;
+    link.download = `toco_table_${tableNumber}_qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="border border-stone-200 rounded-xl p-3.5 bg-white flex flex-col items-center justify-center space-y-2.5">
+      {loading ? (
+        <div className="w-20 h-20 flex items-center justify-center">
+          <RefreshCw className="w-4 h-4 text-gold-500 animate-spin" />
+        </div>
+      ) : (
+        <img
+          src={qrSrc}
+          alt={`Table ${tableNumber} QR`}
+          className="w-20 h-20 border border-stone-150 rounded shadow-xs select-none"
+        />
+      )}
+      <div className="text-center w-full">
+        <p className="text-[10px] font-mono tracking-wider text-stone-600 font-bold">Table {tableNumber}</p>
+        <span className="text-[8px] text-stone-400 block truncate max-w-full" title={scanUrl}>{scanUrl}</span>
+      </div>
+      <button
+        type="button"
+        onClick={handleDownload}
+        className="w-full bg-stone-900 hover:bg-stone-850 text-gold-200 hover:text-white py-1 rounded-lg text-[9px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-stone-900 shadow-3xs"
+      >
+        <Download className="w-3 h-3 text-gold-400" />
+        Download QR
+      </button>
+    </div>
+  );
+}
 
 interface AdminPanelProps {
   menuItems: MenuItem[];
@@ -47,6 +129,32 @@ export default function AdminPanel({
   // Add Table State
   const [tableNum, setTableNum] = useState("");
   const [tableSeats, setTableSeats] = useState("4");
+
+  const handleDownloadAllQRs = async () => {
+    for (let i = 0; i < tables.length; i++) {
+      const t = tables[i];
+      const scanUrl = `https://tocospecialty.bitlabsbuild.com/?table=${t.tableNumber}`;
+      try {
+        const url = await QRCode.toDataURL(scanUrl, {
+          width: 600,
+          margin: 2,
+          color: {
+            dark: "#1c1816",
+            light: "#ffffff",
+          },
+        });
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `toco_table_${t.tableNumber}_qr.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      } catch (err) {
+        console.error("Batch download error:", err);
+      }
+    }
+  };
 
   // Financial Calculations
   const completedOrders = orders.filter(o => o.status === "Served & Completed" || o.paymentConfirmed);
@@ -195,7 +303,7 @@ export default function AdminPanel({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-mono font-bold tracking-widest text-stone-400 uppercase mb-1.5">
-                    Price ($)
+                    Price (ETB)
                   </label>
                   <input
                     type="number"
@@ -203,7 +311,7 @@ export default function AdminPanel({
                     required
                     value={itemPrice}
                     onChange={(e) => setItemPrice(e.target.value)}
-                    placeholder="7.50"
+                    placeholder="250"
                     className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold-500"
                   />
                 </div>
@@ -244,7 +352,7 @@ export default function AdminPanel({
                   type="text"
                   value={itemOptions}
                   onChange={(e) => setItemOptions(e.target.value)}
-                  placeholder="Whole Milk, Oat Milk (+$0.50), Soy Milk"
+                  placeholder="Whole Milk, Oat Milk (+15 ETB), Soy Milk"
                   className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold-500"
                 />
                 <span className="text-[10px] text-stone-400 font-display block mt-1 leading-normal">
@@ -281,7 +389,7 @@ export default function AdminPanel({
                       <span className="text-[10px] font-mono bg-gold-50 text-gold-700 px-1.5 rounded uppercase font-bold">{item.category}</span>
                     </div>
                     <p className="text-[11px] text-stone-400 max-w-sm font-light line-clamp-1">{item.description}</p>
-                    <span className="text-xs font-mono font-bold text-stone-850 block">${Number(item.price).toFixed(2)}</span>
+                    <span className="text-xs font-mono font-bold text-stone-850 block">{Number(item.price).toFixed(2)} ETB</span>
                   </div>
 
                   <button
@@ -301,7 +409,7 @@ export default function AdminPanel({
       {activeTab === "tables" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Add Table Column */}
-          <div className="lg:col-span-5 bg-white border border-stone-150 rounded-3xl p-6 shadow-sm h-fit">
+          <div className="lg:col-span-4 bg-white border border-stone-150 rounded-3xl p-6 shadow-sm h-fit">
             <h3 className="text-base font-serif font-bold text-stone-900 mb-4 pb-2 border-b border-stone-100 uppercase tracking-wider">
               Create QR Table Location
             </h3>
@@ -343,17 +451,27 @@ export default function AdminPanel({
           </div>
 
           {/* QR List and Live Sim Scanner Column */}
-          <div className="lg:col-span-7 bg-white border border-stone-150 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="border-b border-stone-100 pb-2">
-              <h3 className="text-base font-serif font-bold text-stone-900 uppercase tracking-wider">
-                Active QR codes
-              </h3>
-              <p className="text-xs text-stone-400 font-light mt-0.5">
-                Every table gets an official QR launcher. Simulate scanning to instantly set the dining session for your active preview!
-              </p>
+          <div className="lg:col-span-8 bg-white border border-stone-150 rounded-3xl p-6 shadow-sm space-y-4">
+            <div className="border-b border-stone-100 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h3 className="text-base font-serif font-bold text-stone-900 uppercase tracking-wider">
+                  Active QR codes
+                </h3>
+                <p className="text-xs text-stone-400 font-light mt-0.5">
+                  Every table gets an official QR launcher. Simulate scanning to instantly set the dining session for your active preview!
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadAllQRs}
+                className="bg-gold-500 hover:bg-stone-900 text-stone-950 hover:text-gold-300 px-4 py-2.5 rounded-xl text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-gold-500 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download All QRs
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[480px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 gap-4 max-h-[550px] overflow-y-auto pr-1">
               {tables.map((t) => (
                 <div key={t.id} className="border border-stone-150 rounded-2xl p-4 flex flex-col justify-between bg-stone-50">
                   <div className="space-y-2">
@@ -364,54 +482,8 @@ export default function AdminPanel({
                       </span>
                     </div>
 
-                    {/* Simulated visual QR Code Card */}
-                    <div className="border border-stone-200 rounded-lg p-3 bg-white flex flex-col items-center justify-center space-y-1">
-                      {/* Virtual generated QR grid code blocks */}
-                      <div className="grid grid-cols-6 gap-0.5 w-16 h-16 bg-stone-900 p-1 rounded-sm select-none opacity-95">
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                        <div className="bg-stone-900 w-2 h-2" />
-                        <div className="bg-white w-2 h-2" />
-                      </div>
-                      <span className="text-[8px] font-mono tracking-wider text-stone-400">toco-table-{t.tableNumber}</span>
-                    </div>
+                    {/* Real high-res QR code card */}
+                    <TableQRCode tableNumber={t.tableNumber} />
                   </div>
 
                   {/* Simulations & deletes */}
@@ -447,7 +519,7 @@ export default function AdminPanel({
               <span className="text-[10px] font-mono tracking-widest text-stone-400 uppercase font-bold">
                 Food & Beverage Sales
               </span>
-              <p className="text-2xl font-serif font-black text-stone-900 mt-1">${totalSales.toFixed(2)}</p>
+              <p className="text-2xl font-serif font-black text-stone-900 mt-1">{totalSales.toFixed(2)} ETB</p>
               <span className="text-[10px] text-stone-400 block mt-1">Excl. tax & charges</span>
             </div>
 
@@ -455,7 +527,7 @@ export default function AdminPanel({
               <span className="text-[10px] font-mono tracking-widest text-stone-400 uppercase font-bold">
                 VAT Collected (10%)
               </span>
-              <p className="text-2xl font-serif font-black text-stone-900 mt-1">${totalVAT.toFixed(2)}</p>
+              <p className="text-2xl font-serif font-black text-stone-900 mt-1">{totalVAT.toFixed(2)} ETB</p>
               <span className="text-[10px] text-stone-400 block mt-1">Ready for filing</span>
             </div>
 
@@ -463,7 +535,7 @@ export default function AdminPanel({
               <span className="text-[10px] font-mono tracking-widest text-stone-400 uppercase font-bold">
                 Tips & Service Charges (5%)
               </span>
-              <p className="text-2xl font-serif font-black text-gold-600 mt-1">${totalTips.toFixed(2)}</p>
+              <p className="text-2xl font-serif font-black text-gold-600 mt-1">{totalTips.toFixed(2)} ETB</p>
               <span className="text-[10px] text-stone-400 block mt-1">Distributable to staff</span>
             </div>
 
@@ -471,7 +543,7 @@ export default function AdminPanel({
               <span className="text-[10px] font-mono tracking-widest text-gold-400 uppercase font-bold">
                 Gross Register Income
               </span>
-              <p className="text-2xl font-serif font-black text-gold-300 mt-1">${grossRevenue.toFixed(2)}</p>
+              <p className="text-2xl font-serif font-black text-gold-300 mt-1">{grossRevenue.toFixed(2)} ETB</p>
               <span className="text-[10px] text-stone-400 block mt-1">Total credit card & wallet</span>
             </div>
           </div>
@@ -498,7 +570,7 @@ export default function AdminPanel({
                       </div>
                       <div className="text-right">
                         <span className="font-mono font-bold text-stone-900 block">{item.qty} Sold</span>
-                        <span className="text-[10px] text-stone-400 font-mono">${item.revenue.toFixed(2)}</span>
+                        <span className="text-[10px] text-stone-400 font-mono">{item.revenue.toFixed(2)} ETB</span>
                       </div>
                     </div>
                   ))}
