@@ -148,10 +148,11 @@ export default function App() {
   }, []);
 
   // Fetch Database Orders
-  const fetchOrdersFromDB = async () => {
+  const fetchOrdersFromDB = async (tableNumToQuery?: string) => {
     if (!authToken) return;
+    const activeTable = tableNumToQuery || tableNumber;
     try {
-      const res = await fetch("/api/orders", {
+      const res = await fetch(`/api/orders?table=${activeTable}`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
@@ -160,10 +161,12 @@ export default function App() {
         const dbOrders = await res.json();
         setOrders(dbOrders);
 
-        // Sync active unpaid order
-        const activeUnpaid = dbOrders.find((o: any) => !o.paymentConfirmed);
+        // Sync active unpaid order for this specific table
+        const activeUnpaid = dbOrders.find((o: any) => o.tableNumber === activeTable && !o.paymentConfirmed);
         if (activeUnpaid) {
           setActiveOrderId(activeUnpaid.id);
+        } else {
+          setActiveOrderId(null);
         }
       }
     } catch (err) {
@@ -177,12 +180,12 @@ export default function App() {
     // Poll every 5s if logged in and has access to kitchen / admin panel
     let interval: any;
     if (authToken && (userProfile?.role === "staff" || userProfile?.role === "admin")) {
-      interval = setInterval(fetchOrdersFromDB, 5000);
+      interval = setInterval(() => fetchOrdersFromDB(), 5000);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [authToken, userProfile?.role]);
+  }, [authToken, userProfile?.role, tableNumber]);
 
   // Handle redirect from Chapa payment
   useEffect(() => {
@@ -333,8 +336,18 @@ export default function App() {
     else setActiveOrderId(null);
 
     // Parse table from URL if present (e.g. ?table=03 or #/?table=03)
-    const urlParams = new URLSearchParams(window.location.search || window.location.hash.includes("?") ? window.location.hash.split("?")[1] : "");
-    const tableParam = urlParams.get("table");
+    let tableParam = null;
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      tableParam = searchParams.get("table");
+      if (!tableParam && window.location.hash.includes("?")) {
+        const hashParams = new URLSearchParams(window.location.hash.split("?")[1]);
+        tableParam = hashParams.get("table");
+      }
+    } catch (e) {
+      console.error("Error parsing URL parameters", e);
+    }
+
     if (tableParam) {
       setTableNumber(tableParam);
       localStorage.setItem("toco_tableNumber", tableParam);
@@ -696,6 +709,93 @@ export default function App() {
     } catch (err) {
       console.error("Error updating payment status:", err);
     }
+  };
+
+  const handleUpdateActiveOrderItems = async (updatedItems: any[]) => {
+    if (!activeOrderId || !authToken) return;
+
+    const subtotal = updatedItems.reduce((acc, item) => acc + Number(item.price) * Number(item.quantity), 0);
+    const vat = subtotal * 0.10;
+    const serviceCharge = subtotal * 0.05;
+    const total = subtotal + vat + serviceCharge;
+
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/update`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          items: updatedItems.map(item => ({
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: Number(item.price),
+            quantity: Number(item.quantity),
+            customization: item.customization || {},
+          })),
+          subtotal,
+          vat,
+          serviceCharge,
+          total,
+        }),
+      });
+
+      if (res.ok) {
+        const updatedOrder = await res.json();
+        setOrders((prev) =>
+          prev.map((o) => (o.id === activeOrderId ? updatedOrder : o))
+        );
+        
+        // Push a nice confirmation message to chat assistant logs
+        const msg: Message = {
+          id: `order-updated-${Date.now()}`,
+          sender: "assistant",
+          text: `📝 **Your Order on Table ${tableNumber} has been updated!**\n\nWe've successfully updated your choices in the kitchen register. The total is now **${total.toFixed(2)} ETB**. The preparation status is still **Received**!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        setMessages((prev) => [...prev, msg]);
+      } else {
+        const err = await res.json();
+        alert(`Failed to update order: ${err.error || "Please try again."}`);
+      }
+    } catch (err) {
+      console.error("Error updating active order:", err);
+    }
+  };
+
+  const handleMergeCartIntoActiveOrder = async () => {
+    const activeOrder = getActiveOrder();
+    if (!activeOrder || cart.length === 0) return;
+
+    // Merge existing items from the active order with items in the cart
+    const mergedItems = [...activeOrder.items];
+
+    cart.forEach(cartItem => {
+      // Look for match based on menuItemId and customization milk/notes
+      const existingIdx = mergedItems.findIndex(
+        item => item.menuItemId === cartItem.menuItemId &&
+                item.customization?.milk === cartItem.customization?.milk &&
+                item.customization?.notes === cartItem.customization?.notes
+      );
+
+      if (existingIdx !== -1) {
+        mergedItems[existingIdx].quantity += cartItem.quantity;
+      } else {
+        mergedItems.push({
+          id: cartItem.id,
+          orderId: activeOrder.id,
+          menuItemId: cartItem.menuItemId,
+          name: cartItem.name,
+          price: cartItem.price,
+          quantity: cartItem.quantity,
+          customization: cartItem.customization || {},
+        } as any);
+      }
+    });
+
+    await handleUpdateActiveOrderItems(mergedItems);
+    setCart([]); // Clear cart after merging
   };
 
   // Admin dynamic controllers
@@ -1106,7 +1206,7 @@ export default function App() {
                         onExecuteAIAction={handleExecuteAIAction}
                       />
 
-                      {/* Section C: Visual Cart and Receipt Breakdown */}
+                       {/* Section C: Visual Cart and Receipt Breakdown */}
                       <CartDrawer
                         cart={cart}
                         onUpdateQuantity={handleUpdateQuantity}
@@ -1117,6 +1217,8 @@ export default function App() {
                         onPayWithChapa={handleChapaPayment}
                         tableNumber={tableNumber}
                         setTableNumber={setTableNumber}
+                        onUpdateActiveOrderItems={handleUpdateActiveOrderItems}
+                        onMergeCartIntoActiveOrder={handleMergeCartIntoActiveOrder}
                       />
                     </div>
                   </div>

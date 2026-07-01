@@ -18,6 +18,8 @@ interface CartDrawerProps {
   onPayWithChapa: () => Promise<void>;
   tableNumber: string;
   setTableNumber: (num: string) => void;
+  onUpdateActiveOrderItems: (items: any[]) => Promise<void>;
+  onMergeCartIntoActiveOrder: () => Promise<void>;
 }
 
 export default function CartDrawer({
@@ -30,6 +32,8 @@ export default function CartDrawer({
   onPayWithChapa,
   tableNumber,
   setTableNumber,
+  onUpdateActiveOrderItems,
+  onMergeCartIntoActiveOrder,
 }: CartDrawerProps) {
   const [paymentMethod, setPaymentMethod] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -59,10 +63,11 @@ export default function CartDrawer({
     }, 2200);
   };
 
-  const activeSubtotal = activeOrder ? orderSubtotal : subtotal;
-  const activeVat = activeOrder ? orderVat : vat;
-  const activeServiceCharge = activeOrder ? orderServiceCharge : serviceCharge;
-  const activeTotal = activeOrder ? orderTotal : total;
+  // Projected totals when we have both active order and new cart items
+  const activeSubtotal = activeOrder ? (orderSubtotal + subtotal) : subtotal;
+  const activeVat = activeOrder ? (orderVat + vat) : vat;
+  const activeServiceCharge = activeOrder ? (orderServiceCharge + serviceCharge) : serviceCharge;
+  const activeTotal = activeOrder ? (orderTotal + total) : total;
 
   if (cart.length === 0 && !activeOrder) {
     return (
@@ -125,72 +130,141 @@ export default function CartDrawer({
           </div>
 
           {/* Cart Item Rows */}
-          <div className="space-y-4 max-h-56 overflow-y-auto pr-1">
-            {activeOrder ? (
-              activeOrder.items.map((item) => (
-                <div key={item.id} className="text-xs">
-                  <div className="flex items-baseline justify-between gap-1.5">
-                    <span className="font-sans font-bold text-stone-950">
-                      {item.name} <span className="text-stone-400 font-normal">x{item.quantity}</span>
-                    </span>
-                    <span className="text-stone-800 font-mono font-semibold">
-                      {(item.price * item.quantity).toFixed(2)} ETB
-                    </span>
-                  </div>
-                  {item.customization && (item.customization.milk || item.customization.notes) && (
-                    <div className="text-[9px] text-gold-600 font-sans mt-0.5 font-medium italic">
-                      {item.customization.milk && <span>• {item.customization.milk} </span>}
-                      {item.customization.notes && <span>• "{item.customization.notes}"</span>}
-                    </div>
-                  )}
+          <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+            {/* 1. Render Placed Items */}
+            {activeOrder && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1 text-[9px] font-mono tracking-widest text-gold-600 font-black uppercase mb-1">
+                  <span>🛎️ Placed Items ({activeOrder.status})</span>
                 </div>
-              ))
-            ) : (
-              cart.map((item) => (
-                <div key={item.id} className="text-xs">
-                  <div className="flex items-baseline justify-between gap-1.5">
-                    <span className="font-sans font-bold text-stone-950">
-                      {item.name}
-                    </span>
-                    <span className="text-stone-800 font-mono font-semibold">
-                      {(item.price * item.quantity).toFixed(2)} ETB
-                    </span>
-                  </div>
-                  
-                  {item.customization && (item.customization.milk || item.customization.notes) && (
-                    <div className="text-[9px] text-gold-600 font-sans mt-0.5 font-medium italic">
-                      {item.customization.milk && <span>• {item.customization.milk} </span>}
-                      {item.customization.notes && <span>• "{item.customization.notes}"</span>}
-                    </div>
-                  )}
+                {activeOrder.items.length === 0 ? (
+                  <p className="text-[10px] text-stone-400 italic">No items remaining in this order.</p>
+                ) : (
+                  activeOrder.items.map((item) => (
+                    <div key={item.id} className="text-xs border-b border-stone-100 pb-2 last:border-0 last:pb-0">
+                      <div className="flex items-baseline justify-between gap-1.5">
+                        <span className="font-sans font-bold text-stone-950">
+                          {item.name} <span className="text-stone-400 font-normal">x{item.quantity}</span>
+                        </span>
+                        <span className="text-stone-800 font-mono font-semibold">
+                          {(item.price * item.quantity).toFixed(2)} ETB
+                        </span>
+                      </div>
+                      {item.customization && (item.customization.milk || item.customization.notes) && (
+                        <div className="text-[9px] text-gold-600 font-sans mt-0.5 font-medium italic">
+                          {item.customization.milk && <span>• {item.customization.milk} </span>}
+                          {item.customization.notes && <span>• "{item.customization.notes}"</span>}
+                        </div>
+                      )}
 
-                  <div className="flex items-center gap-3 mt-2">
-                    <div className="flex items-center border border-stone-200 rounded-lg overflow-hidden bg-[#FDFBF7]">
-                      <button
-                        onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
-                        className="px-2 py-0.5 text-stone-500 hover:bg-stone-100 text-xs font-bold cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="px-2 font-mono text-xs font-bold text-stone-800">
-                        {item.quantity}
+                      {/* Remove/Edit controls only if status is Received (hasn't started preparing) */}
+                      {activeOrder.status === "Received" && (
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <div className="flex items-center border border-stone-200 rounded-lg overflow-hidden bg-[#FDFBF7] h-6">
+                            <button
+                              onClick={() => {
+                                const newQty = item.quantity - 1;
+                                if (newQty <= 0) {
+                                  const filtered = activeOrder.items.filter(o => o.id !== item.id);
+                                  onUpdateActiveOrderItems(filtered);
+                                } else {
+                                  const updated = activeOrder.items.map(o => o.id === item.id ? { ...o, quantity: newQty } : o);
+                                  onUpdateActiveOrderItems(updated);
+                                }
+                              }}
+                              className="px-1.5 text-stone-500 hover:bg-stone-100 text-[10px] font-bold cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="px-1.5 font-mono text-[10px] font-bold text-stone-800">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => {
+                                const updated = activeOrder.items.map(o => o.id === item.id ? { ...o, quantity: item.quantity + 1 } : o);
+                                onUpdateActiveOrderItems(updated);
+                              }}
+                              className="px-1.5 text-stone-500 hover:bg-stone-100 text-[10px] font-bold cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const filtered = activeOrder.items.filter(o => o.id !== item.id);
+                              onUpdateActiveOrderItems(filtered);
+                            }}
+                            className="text-stone-400 hover:text-red-500 transition-colors cursor-pointer text-[10px] font-semibold"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Divider if both activeOrder and cart are present */}
+            {activeOrder && cart.length > 0 && (
+              <div className="border-t border-dashed border-stone-200 my-3 pt-3" />
+            )}
+
+            {/* 2. Render Cart Items / Pending Additions */}
+            {cart.length > 0 && (
+              <div className="space-y-3">
+                {activeOrder && (
+                  <div className="flex items-center gap-1 text-[9px] font-mono tracking-widest text-emerald-600 font-black uppercase mb-1">
+                    <span>🛒 Pending Additions</span>
+                  </div>
+                )}
+                {cart.map((item) => (
+                  <div key={item.id} className="text-xs">
+                    <div className="flex items-baseline justify-between gap-1.5">
+                      <span className="font-sans font-bold text-stone-950">
+                        {item.name}
                       </span>
+                      <span className="text-stone-800 font-mono font-semibold">
+                        {(item.price * item.quantity).toFixed(2)} ETB
+                      </span>
+                    </div>
+                    
+                    {item.customization && (item.customization.milk || item.customization.notes) && (
+                      <div className="text-[9px] text-gold-600 font-sans mt-0.5 font-medium italic">
+                        {item.customization.milk && <span>• {item.customization.milk} </span>}
+                        {item.customization.notes && <span>• "{item.customization.notes}"</span>}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="flex items-center border border-stone-200 rounded-lg overflow-hidden bg-[#FDFBF7]">
+                        <button
+                          onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+                          className="px-2 py-0.5 text-stone-500 hover:bg-stone-100 text-xs font-bold cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="px-2 font-mono text-xs font-bold text-stone-800">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+                          className="px-2 py-0.5 text-stone-500 hover:bg-stone-100 text-xs font-bold cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
                       <button
-                        onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-                        className="px-2 py-0.5 text-stone-500 hover:bg-stone-100 text-xs font-bold cursor-pointer"
+                        onClick={() => onRemoveItem(item.id)}
+                        className="text-stone-400 hover:text-red-500 transition-colors cursor-pointer"
                       >
-                        +
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <button
-                      onClick={() => onRemoveItem(item.id)}
-                      className="text-stone-400 hover:text-red-500 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
 
@@ -240,7 +314,7 @@ export default function CartDrawer({
               <span className="font-mono text-stone-700">{activeServiceCharge.toFixed(2)} ETB</span>
             </div>
             <div className="flex justify-between text-sm font-serif font-black text-stone-950 pt-2 border-t border-stone-150">
-              <span>Grand Total</span>
+              <span>{activeOrder && cart.length > 0 ? "Projected Grand Total" : "Grand Total"}</span>
               <span className="font-mono text-base text-gold-700">
                 {activeTotal.toFixed(2)} ETB
               </span>
@@ -259,6 +333,26 @@ export default function CartDrawer({
           >
             Transmit Tab to Kitchen
           </button>
+        )}
+
+        {activeOrder && cart.length > 0 && (
+          <div className="mb-4">
+            {activeOrder.status === "Received" ? (
+              <button
+                onClick={onMergeCartIntoActiveOrder}
+                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3.5 rounded-xl font-sans font-bold text-xs uppercase tracking-widest shadow-lg transition-all duration-300 cursor-pointer border border-emerald-800"
+              >
+                Merge Additions to Current Order
+              </button>
+            ) : (
+              <button
+                onClick={() => onPlaceOrder(tableNumber)}
+                className="w-full bg-stone-900 text-gold-200 hover:bg-gold-500 hover:text-stone-950 py-3.5 rounded-xl font-sans font-bold text-xs uppercase tracking-widest shadow-lg transition-all duration-300 cursor-pointer border border-stone-950"
+              >
+                Transmit as Separate Order
+              </button>
+            )}
+          </div>
         )}
 
         {activeOrder && !activeOrder.paymentConfirmed && (

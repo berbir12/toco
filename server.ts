@@ -169,8 +169,16 @@ app.get("/api/orders", requireAuth, async (req: AuthRequest, res) => {
         orderBy: [desc(orders.createdAt)],
       });
     } else {
+      const tableQuery = req.query.table ? String(req.query.table) : null;
+      let condition;
+      if (tableQuery) {
+        condition = sql`${orders.userId} = ${req.user?.uid || ""} OR (${orders.tableNumber} = ${tableQuery} AND ${orders.paymentConfirmed} = false)`;
+      } else {
+        condition = eq(orders.userId, req.user?.uid || "");
+      }
+
       fetchedOrders = await db.query.orders.findMany({
-        where: eq(orders.userId, req.user?.uid || ""),
+        where: condition,
         with: {
           items: true,
         },
@@ -220,6 +228,68 @@ app.patch("/api/orders/:id/status", requireAuth, requireRole(["staff", "admin"])
   } catch (error: any) {
     console.error("Error updating order status:", error);
     res.status(500).json({ error: "Failed to update order status." });
+  }
+});
+
+// Update order items (Customers can update only if status is "Received", Staff / Admin can always update)
+app.patch("/api/orders/:id/update", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { items, subtotal, vat, serviceCharge, total } = req.body;
+
+    const order = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    const role = req.user?.role || "customer";
+    if (role === "customer" && order.status !== "Received") {
+      return res.status(400).json({ error: "You cannot modify this order once preparation has commenced." });
+    }
+
+    // Update order items inside a transaction
+    await db.transaction(async (tx) => {
+      // 1. Delete existing items
+      await tx.delete(orderItems).where(eq(orderItems.orderId, id));
+
+      // 2. Insert new items
+      for (const item of items) {
+        await tx.insert(orderItems).values({
+          orderId: id,
+          menuItemId: String(item.menuItemId),
+          name: String(item.name),
+          price: Number(item.price),
+          quantity: Number(item.quantity),
+          customization: item.customization || {},
+        });
+      }
+
+      // 3. Update order totals
+      await tx.update(orders)
+        .set({
+          subtotal: Number(subtotal),
+          vat: Number(vat),
+          serviceCharge: Number(serviceCharge),
+          total: Number(total),
+        })
+        .where(eq(orders.id, id));
+    });
+
+    // Fetch the updated order
+    const updatedOrder = await db.query.orders.findFirst({
+      where: eq(orders.id, id),
+      with: {
+        items: true,
+      },
+    });
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Error updating order items:", error);
+    res.status(500).json({ error: "Failed to update order." });
   }
 });
 
